@@ -8,7 +8,7 @@
  */
 
 import express from 'express';
-import { CircleGatewayService } from './circle/gateway-service';
+import { createGatewayService } from './circle/gateway';
 import { YellowSessionService } from './yellow/session-service';
 import { MarketResolver } from './markets/resolver';
 
@@ -16,19 +16,22 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Initialize services
-const circleGateway = new CircleGatewayService();
 const yellowSession = new YellowSessionService();
 const marketResolver = new MarketResolver();
 
 app.use(express.json());
 
 // Health check
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
 
-// Circle Gateway routes
-app.use('/api/gateway', circleGateway.router);
+// Circle Gateway routes (only if PRIVATE_KEY is set)
+if (process.env.PRIVATE_KEY) {
+  const gatewayService = createGatewayService('testnet');
+  app.use('/api/gateway', gatewayService.router);
+  console.log('🔵 Circle Gateway routes enabled');
+}
 
 // Yellow Network routes  
 app.use('/api/session', yellowSession.router);
