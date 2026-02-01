@@ -6,10 +6,25 @@ solc = "0.8.24"
 optimizer = true
 optimizer_runs = 200
 
+# Remappings for OpenZeppelin
+remappings = ["@openzeppelin/=lib/openzeppelin-contracts/"]
+
 [rpc_endpoints]
+# Testnets for Basis-Zero
+arc_testnet = "${ARC_TESTNET_RPC_URL}"
+polygon_amoy = "${POLYGON_AMOY_RPC_URL}"
+
+# Other testnets
+sepolia = "${SEPOLIA_RPC_URL}"
+base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+arbitrum_sepolia = "${ARBITRUM_SEPOLIA_RPC_URL}"
+
+# Mainnets (for reference)
 arbitrum = "${ARBITRUM_RPC_URL}"
 base = "${BASE_RPC_URL}"
 polygon = "${POLYGON_RPC_URL}"
 
 [etherscan]
 arbitrum = { key = "${ARBISCAN_API_KEY}" }
+polygon = { key = "${POLYGONSCAN_API_KEY}" }
+polygon_amoy = { key = "${POLYGONSCAN_API_KEY}", url = "https://api-amoy.polygonscan.com/api" }
