@@ -49,3 +49,13 @@ export {
 } from './config';
 
 export { erc20Abi, gatewayWalletAbi, gatewayMinterAbi } from './abis';
+
+// Basis-Zero bridge service
+export {
+  BridgeService,
+  createBridgeService,
+  type BridgeResult,
+  type DepositToArcResult,
+  type SessionBridgeResult,
+  type SettlementBridgeResult,
+} from './bridge-service';

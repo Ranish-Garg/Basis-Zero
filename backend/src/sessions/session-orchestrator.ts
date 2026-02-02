@@ -31,6 +31,7 @@ import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
 import { polygonAmoy } from 'viem/chains';
 
 import { GatewayService } from '../circle/gateway/gateway-service';
+import { BridgeService } from '../circle/gateway/bridge-service';
 import { arcTestnet } from '../circle/gateway/setup';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -196,6 +197,7 @@ export class SessionOrchestrator {
   private account: PrivateKeyAccount;
   private config: SessionConfig;
   private gateway: GatewayService;
+  private bridgeService: BridgeService;
   
   // Arc clients
   private arcPublic: PublicClient;
@@ -216,6 +218,7 @@ export class SessionOrchestrator {
     this.account = account;
     this.config = config;
     this.gateway = gateway;
+    this.bridgeService = new BridgeService(account, 'testnet');
     this.router = Router();
 
     // Setup Arc clients
@@ -364,23 +367,30 @@ export class SessionOrchestrator {
   }
 
   /**
-   * Step 2: Bridge session allowance from Arc to Polygon
+   * Step 2: Bridge session allowance from Arc to Polygon via CCTP
    */
   async bridgeSessionAllowance(
-    amount: bigint
-  ): Promise<{ bridgeTxHash: Hex }> {
-    console.log(`[Session] Bridging ${amount} USDC from Arc to Polygon...`);
+    amount: bigint,
+    sessionId: Hex,
+    user: Address
+  ): Promise<{ bridgeTxHash: Hex; escrowFundHash: Hex }> {
+    console.log(`[Session] Bridging ${amount} USDC from Arc to Polygon via CCTP...`);
 
-    // Use Gateway service to transfer
-    const result = await this.gateway.transfer(
-      'arc',
-      'ethereum', // Polygon routing via Gateway
-      Number(amount) / 1e6, // Human readable amount
-      this.account.address
+    // Use BridgeService for actual CCTP transfer
+    const result = await this.bridgeService.bridgeToSession(
+      amount,
+      sessionId,
+      user,
+      this.config.sessionEscrowAddress
     );
 
-    console.log(`[Session] Bridge complete: ${result.mintHash}`);
-    return { bridgeTxHash: result.mintHash };
+    console.log(`[Session] Bridge complete: ${result.bridgeResult.destinationTxHash}`);
+    console.log(`[Session] Escrow funded: ${result.escrowFundHash}`);
+    
+    return { 
+      bridgeTxHash: result.bridgeResult.destinationTxHash,
+      escrowFundHash: result.escrowFundHash
+    };
   }
 
   /**
@@ -509,7 +519,7 @@ export class SessionOrchestrator {
   }
 
   /**
-   * Execute full session flow (for demo purposes)
+   * Execute full session flow with CCTP bridging (for demo purposes)
    * In production, these would be triggered by user actions + Yellow events
    */
   async executeFullSessionFlow(
@@ -518,23 +528,30 @@ export class SessionOrchestrator {
   ): Promise<{
     sessionId: Hex;
     lockTxHash: Hex;
-    fundTxHash: Hex;
+    bridgeTxHash: Hex;
+    escrowFundHash: Hex;
     confirmTxHash: Hex;
     activateTxHash: Hex;
   }> {
     // Step 1: Start session (lock yield)
     const { sessionId, lockTxHash } = await this.startSession(user, amount);
+    console.log(`[FullFlow] Step 1 complete: Session started`);
 
-    // Step 2-3: Bridge and fund escrow
-    // Note: In real flow, Gateway handles bridging. For demo, we skip the actual bridge
-    // and assume funds are already on Polygon
-    const { fundTxHash } = await this.fundEscrow(user, sessionId, amount);
+    // Step 2-3: Bridge via CCTP and fund escrow (now using actual CCTP!)
+    const { bridgeTxHash, escrowFundHash } = await this.bridgeSessionAllowance(
+      amount,
+      sessionId,
+      user
+    );
+    console.log(`[FullFlow] Step 2-3 complete: Bridged via CCTP and funded escrow`);
 
     // Step 4: Confirm bridge on Arc
     const { confirmTxHash } = await this.confirmBridge(user);
+    console.log(`[FullFlow] Step 4 complete: Bridge confirmed on Arc`);
 
     // Step 5: Activate session on Polygon
     const { activateTxHash } = await this.activateSession(sessionId);
+    console.log(`[FullFlow] Step 5 complete: Session activated on Polygon`);
 
     // At this point, Yellow Nitrolite takes over for off-chain betting
     // Settlement happens later via settleOnPolygon() + reconcileOnArc()
@@ -542,7 +559,8 @@ export class SessionOrchestrator {
     return {
       sessionId,
       lockTxHash,
-      fundTxHash,
+      bridgeTxHash,
+      escrowFundHash,
       confirmTxHash,
       activateTxHash,
     };

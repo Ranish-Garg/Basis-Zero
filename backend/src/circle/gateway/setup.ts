@@ -18,7 +18,7 @@ import {
   type GetContractReturnType,
 } from 'viem';
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
-import { sepolia, baseSepolia, avalancheFuji } from 'viem/chains';
+import { sepolia, baseSepolia, avalancheFuji, polygonAmoy } from 'viem/chains';
 
 import { GatewayClient } from './gateway-client';
 import { erc20Abi, gatewayWalletAbi, gatewayMinterAbi } from './abis';
@@ -64,6 +64,7 @@ const chainMap: Record<string, Chain> = {
   baseSepolia,
   avalancheFuji,
   arcTestnet,
+  polygonAmoy,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -91,6 +92,9 @@ export type ChainConfigs = {
   base: ChainConfig;
   avalanche: ChainConfig;
   arc: ChainConfig;
+  arcTestnet?: ChainConfig;
+  polygonAmoy?: ChainConfig;
+  sepolia?: ChainConfig;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -188,5 +192,8 @@ export function setupAllChains(account: PrivateKeyAccount): ChainConfigs {
     base: setupChain('baseSepolia', account),
     avalanche: setupChain('avalancheFuji', account),
     arc: setupChain('arcTestnet', account),
+    arcTestnet: setupChain('arcTestnet', account),
+    polygonAmoy: setupChain('polygonAmoy', account),
+    sepolia: setupChain('sepolia', account),
   };
 }
