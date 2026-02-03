@@ -10,7 +10,7 @@ import {
     ONE_USDC
 } from './types';
 import { createPool, getPrices, getPoolSummary } from './pool';
-import { placeBet, quoteBet, placeSafeModeBet, getPositionValue } from './mint-swap';
+import { placeBet, quoteBet, placeSafeModeBet, sellPosition, getPositionValue } from './mint-swap';
 import {
     UserPosition,
     MarketResolution,
@@ -96,6 +96,29 @@ export class PoolManager {
         const managed = this.pools.get(marketId);
         if (!managed || managed.status !== 'active') return null;
         return quoteBet(managed.pool, usdcAmount, betOn);
+    }
+
+    sellPosition(marketId: string, userId: string, sharesAmount: bigint, outcome: Outcome) {
+        const managed = this.pools.get(marketId);
+        if (!managed) throw new Error(`Market ${marketId} not found`);
+        if (managed.status !== 'active') throw new Error(`Market ${marketId} is not active`);
+
+        const pos = managed.positions.get(userId);
+        if (!pos) throw new Error('User has no position to sell');
+
+        const currentShares = outcome === Outcome.YES ? pos.yesShares : pos.noShares;
+        if (currentShares < sharesAmount) {
+            throw new Error(`Insufficient shares. Held: ${currentShares}, Selling: ${sharesAmount}`);
+        }
+
+        const result = sellPosition(managed.pool, sharesAmount, outcome);
+        managed.pool = result.newPoolState;
+
+        // Update User Position
+        if (outcome === Outcome.YES) pos.yesShares -= sharesAmount;
+        else pos.noShares -= sharesAmount;
+
+        return result;
     }
 
     getPosition(marketId: string, userId: string): Position | null {

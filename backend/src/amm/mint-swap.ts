@@ -289,3 +289,95 @@ export function runSpecExample(): void {
     console.log(`  NO Reserves:  ${Number(result.newPoolState.noReserves) / 1e6}`);
     console.log('═══════════════════════════════════════════════════════════════');
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SELLING / EXIT LOGIC
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Sell a position (shares) back to USDC
+ * 
+ * Logic: "Swap & Burn"
+ * To get USDC, we need equal amounts of YES and NO shares to merge.
+ * If user holds S shares of YES:
+ * 1. Swap x amount of YES for NO.
+ * 2. Receive y amount of NO.
+ * 3. We find x such that: (S - x) == y
+ * 4. Then merge (S-x) YES + (S-x) NO -> (S-x) USDC.
+ * 
+ * Derivation:
+ * y = R_no - (k / (R_yes + x))
+ * We want: S - x = R_no - (k / (R_yes + x))
+ * This leads to quadratic equation: x^2 + (R_no + R_yes - S)x - S*R_yes = 0
+ * 
+ * @param pool Current pool state
+ * @param sharesAmount Amount of shares to sell
+ * @param outcome Which outcome shares to sell
+ * @returns Resulting USDC and new pool state
+ */
+export function sellPosition(
+    pool: PoolState,
+    sharesAmount: bigint,
+    outcome: Outcome
+): { usdcOut: bigint; newPoolState: PoolState; priceImpact: number } {
+    if (sharesAmount <= 0n) throw new Error('Shares amount must be positive');
+
+    const reservesHeld = outcome === Outcome.YES ? pool.yesReserves : pool.noReserves;
+    const reservesOther = outcome === Outcome.YES ? pool.noReserves : pool.yesReserves;
+    const k = pool.k;
+
+    // Quadratic Coefficients: ax^2 + bx + c = 0
+    // a = 1
+    // b = R_other + R_held - S
+    // c = -S * R_held
+    
+    // We use BigInt but need to be careful with sqrt.
+    // Converting to Number for calculation (precision loss acceptable for large numbers)
+    
+    const R_held = Number(reservesHeld);
+    const R_other = Number(reservesOther);
+    const S = Number(sharesAmount);
+    
+    const a = 1;
+    const b = R_other + R_held - S;
+    const c = -S * R_held;
+    
+    const discriminant = b * b - 4 * a * c;
+    if (discriminant < 0) throw new Error('Solution not found');
+    
+    const x = (-b + Math.sqrt(discriminant)) / (2 * a);
+    const swapAmount = BigInt(Math.floor(x));
+
+    if (swapAmount <= 0n || swapAmount >= sharesAmount) {
+        throw new Error('Invalid swap amount calculated');
+    }
+
+    // Execute the Swap
+    // We are selling 'outcome' shares (swapAmount) to get 'other' shares
+    const swapResult = calculateSwap(pool, swapAmount, outcome);
+    
+    // Check if we achieved parity (approximately)
+    const remainingShares = sharesAmount - swapAmount;
+    const receivedOther = swapResult.amountOut;
+    
+    // The amount we can burn is the minimum of the pair
+    const burnAmount = remainingShares < receivedOther ? remainingShares : receivedOther;
+    
+    // Update Pool State
+    // The pool already updated its reserves in calculateSwap (it received x YES, gave y NO)
+    // Now we update totalCollateral because user is BURNING shares -> removing USDC
+    const newPoolState: PoolState = {
+        ...swapResult.newPoolState,
+        totalCollateral: pool.totalCollateral - burnAmount
+    };
+    
+    // Calculate Price Impact
+    const spotPriceBefore = getPrices(pool).yesProbability;
+    const spotPriceAfter = getPrices(newPoolState).yesProbability;
+
+    return {
+        usdcOut: burnAmount,
+        newPoolState,
+        priceImpact: Math.abs(spotPriceAfter - spotPriceBefore)
+    };
+}

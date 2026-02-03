@@ -46,6 +46,7 @@ export {
     placeBet,
     quoteBet,
     placeSafeModeBet,
+    sellPosition,
     getPositionValue,
     calculatePayout,
     runSpecExample

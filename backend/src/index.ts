@@ -13,6 +13,7 @@ import cors from 'cors';
 import { CctpService, getAccount, createCctpRouter } from './circle/cctp';
 import { YellowSessionService } from './yellow/session-service';
 import { MarketResolver } from './markets/resolver';
+import { ammRouter } from './amm/router';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -42,15 +43,21 @@ if (process.env.PRIVATE_KEY) {
 }
 
 // Yellow Network routes  
+// Yellow Network routes  
 app.use('/api/session', yellowSession.router);
 
-// Market routes
+// AMM Market routes (Internal Logic)
+app.use('/api/amm', ammRouter);
+console.log('🟢 AMM Market routes enabled');
+
+// Market Resolver routes (Oracles)
 app.use('/api/markets', marketResolver.router);
 
 app.listen(PORT, () => {
   console.log(`🚀 Basis-Zero Backend running on port ${PORT}`);
   console.log(`   📍 Health: http://localhost:${PORT}/health`);
   console.log(`   📍 Sessions: http://localhost:${PORT}/api/session`);
+  console.log(`   📍 AMM: http://localhost:${PORT}/api/amm`);
   console.log(`   📍 Markets: http://localhost:${PORT}/api/markets`);
 });
 

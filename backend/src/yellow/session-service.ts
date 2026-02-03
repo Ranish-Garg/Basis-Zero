@@ -33,6 +33,7 @@ import {
 import { privateKeyToAccount } from 'viem/accounts';
 import { createWalletClient, http, type Address, type Hex } from 'viem';
 import { arbitrumSepolia } from 'viem/chains';
+import { poolManager, Outcome } from '../amm';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -53,7 +54,8 @@ export interface Bet {
   id: string;
   marketId: string;
   side: 'YES' | 'NO';
-  amount: bigint;
+  amount: bigint; // USDC Cost
+  shares: bigint; // Shares received
   timestamp: number;
   resolved: boolean;
   won?: boolean;
@@ -259,6 +261,28 @@ export class YellowSessionService {
       } catch (error) {
         res.status(500).json({ error: String(error) });
       }
+    });
+
+    // Sell a position (Early Exit)
+    this.router.post('/sell', async (req, res) => {
+        try {
+            const { sessionId, marketId, amount, outcome } = req.body;
+            // amount here refers to SHARES amount to sell
+            const result = await this.sellPosition(
+                sessionId,
+                marketId,
+                BigInt(amount),
+                outcome === 'YES' ? Outcome.YES : Outcome.NO
+            );
+            res.json({
+                success: true,
+                usdcReceived: result.usdcReceived.toString(),
+                priceImpact: result.priceImpact,
+                availableBalance: result.availableBalance.toString()
+            });
+        } catch (error) {
+            res.status(500).json({ error: String(error) });
+        }
     });
 
     // Get session status
@@ -484,12 +508,25 @@ export class YellowSessionService {
       throw new Error(`Insufficient balance. Available: ${balance.available}, Requested: ${amount}`);
     }
 
-    // Create bet
+    // Convert side to AMM Outcome
+    const outcome = side === 'YES' ? Outcome.YES : Outcome.NO;
+
+    // Execute bet against AMM Pool
+    // This updates the global price and the user's position in the AMM
+    const result = poolManager.placeBet(
+      marketId,
+      session.user, // Use user eth address as ID
+      amount,
+      outcome
+    );
+
+    // Create bet record (for history/frontend)
     const bet: Bet = {
       id: `bet_${Date.now()}`,
       marketId,
       side,
       amount,
+      shares: result.totalShares,
       timestamp: Date.now(),
       resolved: false,
     };
@@ -500,16 +537,71 @@ export class YellowSessionService {
     this.sessionBets.set(sessionId, bets);
 
     // Note: In production, this would submit an app state update to ClearNode
-    // using createSubmitAppStateMessage
+    // using createSubmitAppStateMessage to prove the new balance to the user.
 
+    // Recalculate available balance (Principal + Yield - Amount Spent)
     const newBalance = this.getStreamingBalance(sessionId, session.safeModeEnabled);
 
-    console.log(`🟡 Bet placed: ${bet.id} on ${marketId} (${side}) for ${amount}`);
+    console.log(`🟡 AMM Bet Placed: ${marketId} | ${side} | ${Number(amount)/1e6} USDC @ ${result.effectivePrice.toFixed(4)}`);
+    console.log(`   Shares Received: ${Number(result.totalShares)/1e6}`);
 
     return {
       success: true,
       bet,
       availableBalance: newBalance.available,
+    };
+  }
+
+  /**
+   * Sell shares back to the AMM (Early Exit)
+   */
+  async sellPosition(
+    sessionId: string,
+    marketId: string,
+    sharesAmount: bigint,
+    outcome: Outcome
+  ): Promise<{ success: boolean; usdcReceived: bigint; priceImpact: number; availableBalance: bigint }> {
+    const session = this.sessions.get(sessionId);
+    if (!session) throw new Error('Session not found');
+    if (session.status !== 'active') throw new Error('Session not active');
+
+    // Execute Sell against AMM
+    const result = poolManager.sellPosition(
+        marketId,
+        session.user,
+        sharesAmount,
+        outcome
+    );
+
+    // Record the "Sell" as a negative bet or trade record
+    // For now, we append a special Trade Record to the log
+    const trade: Bet = {
+        id: `sell_${Date.now()}`,
+        marketId,
+        side: outcome === Outcome.YES ? 'YES' : 'NO',
+        amount: -result.usdcOut, // Negative amount implies we RECEIVED money
+        shares: -sharesAmount,   // Negative shares implies we SOLD shares
+        timestamp: Date.now(),
+        resolved: false,
+        won: undefined // Not relevant for sell
+    };
+    
+    const bets = this.sessionBets.get(sessionId) || [];
+    bets.push(trade);
+    this.sessionBets.set(sessionId, bets);
+
+    // Note: In production, send signed state update (Balance Increased)
+
+    const newBalance = this.getStreamingBalance(sessionId, session.safeModeEnabled);
+
+    console.log(`🟡 AMM Sell Executed: ${marketId} | Sold ${Number(sharesAmount)/1e6} Shares`);
+    console.log(`   Received: ${Number(result.usdcOut)/1e6} USDC`);
+
+    return {
+        success: true,
+        usdcReceived: result.usdcOut,
+        priceImpact: result.priceImpact,
+        availableBalance: newBalance.available
     };
   }
 
@@ -549,8 +641,12 @@ export class YellowSessionService {
     for (const bet of bets) {
       if (bet.resolved) {
         if (bet.won) {
-          pnl += bet.amount;
+          // Win: Payout = Shares * 1 USDC - Cost
+          // Cost is bet.amount
+          // Payout is bet.shares (since 1 share = 1 USDC on win)
+          pnl += (bet.shares - bet.amount);
         } else {
+          // Loss: Payout = 0 - Cost
           pnl -= bet.amount;
         }
       }
