@@ -2,32 +2,33 @@
  * Circle module exports
  * 
  * Includes:
- * - Circle Gateway SDK for cross-chain USDC transfers
+ * - CCTP SDK for cross-chain USDC transfers
  * - RWA Yield Oracle for T-Bill rate tracking
  */
 
-// Gateway SDK
+// CCTP SDK
 export {
-  GatewayService,
-  GatewayClient,
-  createGatewayService,
-  burnIntent,
-  burnIntentTypedData,
-  getAccount,
+  CctpService,
+  setupChain,
   setupAllChains,
-  GATEWAY_WALLET_ADDRESS,
-  GATEWAY_MINTER_ADDRESS,
+  getAccount,
+  arcTestnet,
+  CCTP_CONTRACTS,
   DOMAINS,
   CHAIN_NAMES,
-} from './gateway';
+  USDC_ADDRESSES_TESTNET,
+  USDC_ADDRESSES_MAINNET,
+  RPC_URLS_TESTNET,
+  IRIS_API,
+  erc20Abi,
+} from './cctp';
 
 export type {
-  BalanceInfo,
-  DepositResult,
-  TransferResult,
   ChainConfig,
   ChainConfigs,
-} from './gateway';
+  ChainName,
+  NetworkType,
+} from './cctp';
 
 // RWA Yield Oracle
 export { RWAYieldOracle, rwaOracle, type RWARate } from './rwa-oracle';

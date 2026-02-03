@@ -30,9 +30,7 @@ import {
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
 import { polygonAmoy } from 'viem/chains';
 
-import { GatewayService } from '../circle/gateway/gateway-service';
-import { BridgeService } from '../circle/gateway/bridge-service';
-import { arcTestnet } from '../circle/gateway/setup';
+import { CctpService, arcTestnet } from '../circle/cctp';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CONTRACT ABIs (minimal for orchestration)
@@ -193,17 +191,16 @@ type Erc20Contract = GetContractReturnType<typeof erc20Abi, { public: PublicClie
 
 export class SessionOrchestrator {
   public router: Router;
-  
+
   private account: PrivateKeyAccount;
   private config: SessionConfig;
-  private gateway: GatewayService;
-  private bridgeService: BridgeService;
-  
+  private cctpService: CctpService;
+
   // Arc clients
   private arcPublic: PublicClient;
   private arcWallet: WalletClient;
   private arcVault: ArcVaultContract;
-  
+
   // Polygon clients
   private polygonPublic: PublicClient;
   private polygonWallet: WalletClient;
@@ -212,13 +209,11 @@ export class SessionOrchestrator {
 
   constructor(
     account: PrivateKeyAccount,
-    config: SessionConfig,
-    gateway: GatewayService
+    config: SessionConfig
   ) {
     this.account = account;
     this.config = config;
-    this.gateway = gateway;
-    this.bridgeService = new BridgeService(account, 'testnet');
+    this.cctpService = new CctpService(account);
     this.router = Router();
 
     // Setup Arc clients
@@ -376,20 +371,22 @@ export class SessionOrchestrator {
   ): Promise<{ bridgeTxHash: Hex; escrowFundHash: Hex }> {
     console.log(`[Session] Bridging ${amount} USDC from Arc to Polygon via CCTP...`);
 
-    // Use BridgeService for actual CCTP transfer
-    const result = await this.bridgeService.bridgeToSession(
+    // Use CCTP service for actual transfer
+    const result = await this.cctpService.bridgeUSDC(
+      'arcTestnet',
+      'polygonAmoy',
       amount,
-      sessionId,
-      user,
       this.config.sessionEscrowAddress
     );
 
-    console.log(`[Session] Bridge complete: ${result.bridgeResult.destinationTxHash}`);
-    console.log(`[Session] Escrow funded: ${result.escrowFundHash}`);
-    
-    return { 
-      bridgeTxHash: result.bridgeResult.destinationTxHash,
-      escrowFundHash: result.escrowFundHash
+    console.log(`[Session] Bridge complete: ${result.mintTx}`);
+
+    // Fund escrow with bridged funds
+    const { fundTxHash } = await this.fundEscrow(user, sessionId, amount);
+
+    return {
+      bridgeTxHash: result.mintTx,
+      escrowFundHash: fundTxHash
     };
   }
 
@@ -470,8 +467,8 @@ export class SessionOrchestrator {
       { account: this.account, chain: null }
     ) as Hex;
 
-    const receipt = await this.polygonPublic.waitForTransactionReceipt({ 
-      hash: settleTxHash 
+    const receipt = await this.polygonPublic.waitForTransactionReceipt({
+      hash: settleTxHash
     });
 
     // Extract settlement proof from event logs (simplified)
@@ -574,13 +571,13 @@ export class SessionOrchestrator {
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(2, 15);
     const data = `${user}-${timestamp}-${random}`;
-    
+
     // Simple hash (in production, use proper keccak256)
     let hash = 0n;
     for (let i = 0; i < data.length; i++) {
       hash = (hash * 31n + BigInt(data.charCodeAt(i))) % (2n ** 256n);
     }
-    
+
     return ('0x' + hash.toString(16).padStart(64, '0')) as Hex;
   }
 }
@@ -590,7 +587,6 @@ export class SessionOrchestrator {
 // ═══════════════════════════════════════════════════════════════════════════
 
 export function createSessionOrchestrator(
-  gateway: GatewayService,
   config?: Partial<SessionConfig>
 ): SessionOrchestrator {
   const privateKey = process.env.PRIVATE_KEY;
@@ -611,5 +607,5 @@ export function createSessionOrchestrator(
     ...config,
   };
 
-  return new SessionOrchestrator(account, fullConfig, gateway);
+  return new SessionOrchestrator(account, fullConfig);
 }
