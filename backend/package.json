@@ -12,6 +12,7 @@
     "test:flow:verbose": "DEBUG=* tsx src/test-full-flow.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
     "@erc7824/nitrolite": "latest",
     "@pythnetwork/hermes-client": "^1.4.0",
     "cors": "^2.8.6",
