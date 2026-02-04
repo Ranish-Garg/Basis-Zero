@@ -42,6 +42,16 @@ export const ERC20_ABI = [
         ],
         outputs: [{ name: "", type: "uint256" }],
     },
+    {
+        name: "transfer",
+        type: "function",
+        stateMutability: "nonpayable",
+        inputs: [
+            { name: "to", type: "address" },
+            { name: "amount", type: "uint256" },
+        ],
+        outputs: [{ name: "", type: "bool" }],
+    },
 ] as const
 
 export const SESSION_ESCROW_ABI = [
@@ -162,10 +172,25 @@ export const ARC_VAULT_ABI = [
     name: "deposit",
     type: "function",
     stateMutability: "nonpayable",
+    inputs: [{ name: "amount", type: "uint256" }],
+    outputs: []
+  },
+  {
+    name: "lockSessionAllowance",
+    type: "function",
+    stateMutability: "nonpayable",
     inputs: [
-      { name: "assets", type: "uint256" },
-      { name: "receiver", type: "address" }
+      { name: "amount", type: "uint256" },
+      { name: "sessionId", type: "bytes32" }
     ],
-    outputs: [{ name: "", type: "uint256" }]
+    outputs: []
+  },
+  {
+    name: "cancelTimedOutSession",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "user", type: "address" }],
+    outputs: []
   }
 ] as const
+
