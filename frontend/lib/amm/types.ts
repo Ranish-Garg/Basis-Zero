@@ -167,3 +167,84 @@ export const PROTOCOL_FEE_BPS = 100;
 
 /** Basis points denominator */
 export const BPS_DENOMINATOR = 10_000;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FRONTEND API TYPES
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Market with frontend-friendly format (serialized BigInts)
+ */
+export interface Market {
+    marketId: string;
+    title: string;
+    description: string | null;
+    expiresAt: string;
+    status: 'ACTIVE' | 'RESOLVED' | 'CANCELLED';
+    resolutionValue: 'YES' | 'NO' | null;
+    yesReserves: string;
+    noReserves: string;
+    totalCollateral: string;
+    kInvariant: string;
+    prices: PoolPrices;
+    // Optional UI fields for display
+    category?: string;
+    trending?: boolean;
+    participants?: number;
+    volume?: string;
+}
+
+/**
+ * Bet quote response
+ */
+export interface BetQuote {
+    expectedShares: string;
+    effectivePrice: number;
+    priceImpact: number;
+}
+
+/**
+ * User position in a market
+ */
+export interface Position {
+    yesShares: string;
+    noShares: string;
+    costBasis: string;
+}
+
+/**
+ * Result of selling a position
+ */
+export interface SellResult {
+    usdcOut: string;
+    priceImpact: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPER FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Format USDC amount from base units to display string
+ * @param amount Amount in base units (6 decimals)
+ * @returns Formatted string like "100.00"
+ */
+export function formatUSDC(amount: string | bigint): string {
+    const value = typeof amount === 'string' ? BigInt(amount) : amount;
+    const whole = value / BigInt(10 ** USDC_DECIMALS);
+    const frac = value % BigInt(10 ** USDC_DECIMALS);
+    const fracStr = frac.toString().padStart(USDC_DECIMALS, '0').slice(0, 2);
+    return `${whole}.${fracStr}`;
+}
+
+/**
+ * Parse user input to USDC base units
+ * @param input User input like "100" or "50.25"
+ * @returns Amount in base units (6 decimals)
+ */
+export function parseUSDCInput(input: string): string {
+    const num = parseFloat(input);
+    if (isNaN(num) || num < 0) return '0';
+    return Math.floor(num * 10 ** USDC_DECIMALS).toString();
+}
+

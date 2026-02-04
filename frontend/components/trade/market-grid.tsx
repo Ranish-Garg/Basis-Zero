@@ -1,8 +1,11 @@
 "use client"
 
-import Link from "next/link"
-import { TrendingUp, Cloud, Bitcoin, Landmark, Users, Clock } from "lucide-react"
+import { useState, useEffect } from "react"
+import { TrendingUp, Cloud, Bitcoin, Landmark, Users, Clock, Loader2, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useMarkets } from "@/hooks/use-amm"
+import type { Market } from "@/lib/amm/types"
+import { formatUSDC } from "@/lib/amm/types"
 
 const categories = [
     { id: "all", label: "All Markets", icon: TrendingUp },
@@ -12,85 +15,65 @@ const categories = [
     { id: "weather", label: "Weather", icon: Cloud },
 ]
 
-const markets = [
+// Fallback mock data for when backend is not available
+const mockMarkets: Market[] = [
     {
-        id: 1,
-        category: "crypto",
+        marketId: "btc-100k-march-2026",
         title: "BTC > $100K by March 2026?",
         description: "Will Bitcoin exceed $100,000 USD before March 31, 2026?",
+        category: "crypto",
+        expiresAt: "2026-03-31T00:00:00Z",
+        status: "ACTIVE",
+        resolutionValue: null,
+        yesReserves: "500000000000",
+        noReserves: "500000000000",
+        totalCollateral: "1000000000000",
+        kInvariant: "250000000000000000000000",
+        prices: { yesPrice: 0.72, noPrice: 0.28, yesProbability: 72, noProbability: 28 },
         volume: "$234,567",
-        yesPrice: "0.72",
-        noPrice: "0.28",
-        endDate: "Mar 31, 2026",
         participants: 1247,
         trending: true,
     },
     {
-        id: 2,
-        category: "crypto",
+        marketId: "eth-flip-btc-2026",
         title: "ETH Flip BTC Market Cap 2026?",
         description: "Will Ethereum's market cap exceed Bitcoin's in 2026?",
+        category: "crypto",
+        expiresAt: "2026-12-31T00:00:00Z",
+        status: "ACTIVE",
+        resolutionValue: null,
+        yesReserves: "500000000000",
+        noReserves: "500000000000",
+        totalCollateral: "1000000000000",
+        kInvariant: "250000000000000000000000",
+        prices: { yesPrice: 0.18, noPrice: 0.82, yesProbability: 18, noProbability: 82 },
         volume: "$89,234",
-        yesPrice: "0.18",
-        noPrice: "0.82",
-        endDate: "Dec 31, 2026",
         participants: 567,
         trending: false,
     },
     {
-        id: 3,
-        category: "sports",
-        title: "Lakers win NBA Championship 2026?",
-        description: "Will the Los Angeles Lakers win the 2025-2026 NBA Championship?",
-        volume: "$156,789",
-        yesPrice: "0.45",
-        noPrice: "0.55",
-        endDate: "Jun 30, 2026",
-        participants: 892,
-        trending: true,
-    },
-    {
-        id: 4,
-        category: "macro",
+        marketId: "fed-rate-cut-june-2026",
         title: "Fed cuts rates before June 2026?",
         description: "Will the Federal Reserve cut interest rates before June 1, 2026?",
+        category: "macro",
+        expiresAt: "2026-06-01T00:00:00Z",
+        status: "ACTIVE",
+        resolutionValue: null,
+        yesReserves: "500000000000",
+        noReserves: "500000000000",
+        totalCollateral: "1000000000000",
+        kInvariant: "250000000000000000000000",
+        prices: { yesPrice: 0.68, noPrice: 0.32, yesProbability: 68, noProbability: 32 },
         volume: "$312,456",
-        yesPrice: "0.68",
-        noPrice: "0.32",
-        endDate: "Jun 1, 2026",
         participants: 2104,
         trending: true,
-    },
-    {
-        id: 5,
-        category: "macro",
-        title: "US GDP Growth > 3% Q1 2026?",
-        description: "Will US GDP growth exceed 3% in Q1 2026?",
-        volume: "$78,123",
-        yesPrice: "0.42",
-        noPrice: "0.58",
-        endDate: "Apr 30, 2026",
-        participants: 456,
-        trending: false,
-    },
-    {
-        id: 6,
-        category: "weather",
-        title: "Record high temperature March 2026?",
-        description: "Will global average temperature set a new record in March 2026?",
-        volume: "$89,012",
-        yesPrice: "0.34",
-        noPrice: "0.66",
-        endDate: "Apr 1, 2026",
-        participants: 678,
-        trending: false,
     },
 ]
 
 interface MarketGridProps {
     activeCategory?: string
     onCategoryChange?: (category: string) => void
-    onMarketSelect?: (marketId: number) => void
+    onMarketSelect?: (marketId: string) => void
 }
 
 export function MarketGrid({
@@ -98,12 +81,36 @@ export function MarketGrid({
     onCategoryChange,
     onMarketSelect
 }: MarketGridProps) {
+    const { data, isLoading, error } = useMarkets()
+    const [useFallback, setUseFallback] = useState(false)
+
+    // Use fallback data if API fails
+    useEffect(() => {
+        if (error) {
+            setUseFallback(true)
+        }
+    }, [error])
+
+    const markets = useFallback ? mockMarkets : (data?.markets || mockMarkets)
+
     const filteredMarkets = activeCategory === "all"
         ? markets
         : markets.filter(m => m.category === activeCategory)
 
+    const formatDate = (dateString: string) => {
+        try {
+            return new Date(dateString).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric'
+            })
+        } catch {
+            return dateString
+        }
+    }
+
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 overflow-hidden">
             {/* Category Filters */}
             <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:overflow-visible sm:flex-wrap scrollbar-hide">
                 {categories.map((cat) => (
@@ -123,12 +130,28 @@ export function MarketGrid({
                 ))}
             </div>
 
+            {/* Loading State */}
+            {isLoading && !useFallback && (
+                <div className="flex items-center justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <span className="ml-3 text-muted-foreground">Loading markets...</span>
+                </div>
+            )}
+
+            {/* Error State with Fallback Notice */}
+            {useFallback && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 dark:text-yellow-400 text-xs">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>Using demo data. Start the backend to see live markets.</span>
+                </div>
+            )}
+
             {/* Market Cards Grid */}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
                 {filteredMarkets.map((market, index) => (
                     <button
-                        key={market.id}
-                        onClick={() => onMarketSelect?.(market.id)}
+                        key={market.marketId}
+                        onClick={() => onMarketSelect?.(market.marketId)}
                         className={cn(
                             "group relative overflow-hidden rounded-xl border border-border/60 bg-card/40 p-5 glass transition-all duration-400 text-left active:scale-[0.99] hover-lift hover:border-primary/40 hover:bg-card/70 animate-fade-in-up",
                         )}
@@ -145,17 +168,21 @@ export function MarketGrid({
                         {/* Category */}
                         <div className="flex items-center gap-2 mb-3">
                             <span className="font-mono text-xs text-primary uppercase tracking-wider">
-                                {market.category}
+                                {market.category || 'general'}
                             </span>
-                            <span className="text-border">•</span>
-                            <span className="flex items-center gap-1 font-mono text-xs text-muted-foreground">
-                                <Users className="h-3 w-3" />
-                                {market.participants}
-                            </span>
+                            {market.participants && (
+                                <>
+                                    <span className="text-border">•</span>
+                                    <span className="flex items-center gap-1 font-mono text-xs text-muted-foreground">
+                                        <Users className="h-3 w-3" />
+                                        {market.participants}
+                                    </span>
+                                </>
+                            )}
                         </div>
 
                         {/* Title */}
-                        <h4 className="font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors mb-2 line-clamp-2">
+                        <h4 className="font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors mb-2 line-clamp-2 break-words">
                             {market.title}
                         </h4>
 
@@ -167,11 +194,15 @@ export function MarketGrid({
                         {/* Prices */}
                         <div className="flex gap-2 mb-3">
                             <div className="flex-1 rounded-lg bg-green-500/10 border border-green-500/30 py-2 px-3 text-center">
-                                <p className="font-mono text-lg font-bold text-green-500">{market.yesPrice}</p>
+                                <p className="font-mono text-lg font-bold text-green-500">
+                                    {market.prices.yesPrice.toFixed(2)}
+                                </p>
                                 <p className="font-mono text-[10px] text-muted-foreground">YES</p>
                             </div>
                             <div className="flex-1 rounded-lg bg-red-500/10 border border-red-500/30 py-2 px-3 text-center">
-                                <p className="font-mono text-lg font-bold text-red-500">{market.noPrice}</p>
+                                <p className="font-mono text-lg font-bold text-red-500">
+                                    {market.prices.noPrice.toFixed(2)}
+                                </p>
                                 <p className="font-mono text-[10px] text-muted-foreground">NO</p>
                             </div>
                         </div>
@@ -180,9 +211,11 @@ export function MarketGrid({
                         <div className="flex items-center justify-between text-xs border-t border-border/50 pt-3">
                             <span className="flex items-center gap-1 text-muted-foreground">
                                 <Clock className="h-3 w-3" />
-                                {market.endDate}
+                                {formatDate(market.expiresAt)}
                             </span>
-                            <span className="font-mono text-foreground font-medium">{market.volume}</span>
+                            <span className="font-mono text-foreground font-medium truncate">
+                                {market.volume || formatUSDC(market.totalCollateral)}
+                            </span>
                         </div>
 
                         {/* Bottom accent */}
@@ -190,6 +223,14 @@ export function MarketGrid({
                     </button>
                 ))}
             </div>
+
+            {/* Empty State */}
+            {filteredMarkets.length === 0 && !isLoading && (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <TrendingUp className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                    <p className="text-muted-foreground">No markets found in this category.</p>
+                </div>
+            )}
         </div>
     )
 }

@@ -3,7 +3,7 @@
  */
 
 import { getSupabase } from './supabase';
-import { PoolState, Outcome } from '../amm/types';
+import { PoolState, Outcome } from '@/lib/amm/types';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPE DEFINITIONS
@@ -293,7 +293,7 @@ export function marketRowToPoolState(row: MarketRow): PoolState {
         noReserves: BigInt(row.no_reserves),
         k: BigInt(row.k_invariant),
         virtualLiquidity: BigInt(row.yes_reserves), // Assume initial liquidity = reserves
-        totalCollateral: 0n,
+        totalCollateral: BigInt(0),
         createdAt: new Date(row.created_at).getTime(),
         updatedAt: Date.now()
     };

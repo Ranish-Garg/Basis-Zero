@@ -4,33 +4,43 @@ import { useState } from "react"
 import { StreamingBalance } from "@/components/trade/streaming-balance"
 import { MarketGrid } from "@/components/trade/market-grid"
 import { OrderBook } from "@/components/trade/order-book"
+import { CreateMarketDialog, CreateMarketButton } from "@/components/trade/create-market-dialog"
+import { useMarkets } from "@/hooks/use-amm"
+import type { Market } from "@/lib/amm/types"
 
 export default function TradePage() {
     const [safeModeEnabled, setSafeModeEnabled] = useState(true)
     const [activeCategory, setActiveCategory] = useState("all")
-    const [selectedMarket, setSelectedMarket] = useState<number | null>(null)
+    const [selectedMarketId, setSelectedMarketId] = useState<string | null>(null)
+    const [showCreateDialog, setShowCreateDialog] = useState(false)
 
-    const mockMarket = selectedMarket ? {
-        id: selectedMarket,
-        title: "BTC > $100K by March 2026?",
-        yesPrice: "0.72",
-        noPrice: "0.28",
-    } : undefined
+    // Fetch markets to get the selected market details
+    const { data: marketsData } = useMarkets()
+
+    // Find the selected market from the markets list
+    const selectedMarket: Market | null = selectedMarketId
+        ? marketsData?.markets?.find(m => m.marketId === selectedMarketId) || null
+        : null
 
     return (
-        <div className="min-h-screen pt-24 pb-12">
-            <div className="mx-auto max-w-7xl px-4 sm:px-6">
+        <div className="min-h-screen pt-24 pb-12 overflow-x-hidden">
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 overflow-hidden">
                 {/* Page Header */}
-                <div className="mb-8 space-y-2">
-                    <p className="font-mono text-xs uppercase tracking-[0.25em] sm:tracking-[0.35em] text-primary">
-                        Trading Dashboard
-                    </p>
-                    <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-                        Prediction Markets
-                    </h1>
-                    <p className="max-w-2xl text-base text-muted-foreground">
-                        Trade using your accrued yield. Your principal stays protected in RWA vaults earning 5.12% APY.
-                    </p>
+                <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="space-y-2">
+                        <p className="font-mono text-xs uppercase tracking-[0.25em] sm:tracking-[0.35em] text-primary">
+                            Trading Dashboard
+                        </p>
+                        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+                            Prediction Markets
+                        </h1>
+                        <p className="max-w-2xl text-base text-muted-foreground">
+                            Trade using your accrued yield. Your principal stays protected in RWA vaults earning 5.12% APY.
+                        </p>
+                    </div>
+
+                    {/* Create Market Button */}
+                    <CreateMarketButton onClick={() => setShowCreateDialog(true)} />
                 </div>
 
                 {/* Main Grid Layout */}
@@ -45,31 +55,45 @@ export default function TradePage() {
                             onSafeModeToggle={setSafeModeEnabled}
                         />
 
-                        {/* Order Book */}
-                        <OrderBook selectedMarket={mockMarket} />
+                        {/* Order Book / Trade Panel */}
+                        <OrderBook
+                            selectedMarket={selectedMarket}
+                            userId="demo-user"
+                        />
                     </div>
 
                     {/* Right Column - Market Grid */}
                     <div className="lg:col-span-8">
                         <div className="rounded-xl border border-border bg-card/60 glass p-6">
-                            <div className="mb-6">
-                                <h2 className="font-mono text-xs uppercase tracking-wider text-primary mb-2">
-                                    Available Markets
-                                </h2>
-                                <p className="text-sm text-muted-foreground">
-                                    Select a market to view details and place trades
-                                </p>
+                            <div className="mb-6 flex items-center justify-between">
+                                <div>
+                                    <h2 className="font-mono text-xs uppercase tracking-wider text-primary mb-2">
+                                        Available Markets
+                                    </h2>
+                                    <p className="text-sm text-muted-foreground">
+                                        Select a market to view details and place trades
+                                    </p>
+                                </div>
+                                <div className="text-sm text-muted-foreground">
+                                    {marketsData?.markets?.length || 0} markets
+                                </div>
                             </div>
 
                             <MarketGrid
                                 activeCategory={activeCategory}
                                 onCategoryChange={setActiveCategory}
-                                onMarketSelect={setSelectedMarket}
+                                onMarketSelect={setSelectedMarketId}
                             />
                         </div>
                     </div>
                 </div>
             </div>
+
+            {/* Create Market Dialog */}
+            <CreateMarketDialog
+                isOpen={showCreateDialog}
+                onClose={() => setShowCreateDialog(false)}
+            />
         </div>
     )
 }

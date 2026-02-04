@@ -1,0 +1,228 @@
+"use client";
+
+/**
+ * AMM Hooks - React Query hooks for AMM operations
+ */
+
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Outcome } from '@/lib/amm/types';
+import type {
+    Market,
+    BetQuote,
+    BetResult,
+    SellResult,
+    Position
+} from '@/lib/amm/types';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// QUERY KEYS
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const ammKeys = {
+    all: ['amm'] as const,
+    markets: () => [...ammKeys.all, 'markets'] as const,
+    market: (id: string) => [...ammKeys.markets(), id] as const,
+    quote: (marketId: string, amount: string, outcome: Outcome) =>
+        [...ammKeys.all, 'quote', marketId, amount, outcome] as const,
+    position: (marketId: string, userId: string) =>
+        [...ammKeys.all, 'position', marketId, userId] as const,
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FETCH FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════════════
+
+async function fetchMarkets(): Promise<{ markets: Market[] }> {
+    const response = await fetch('/api/amm/markets');
+    if (!response.ok) {
+        throw new Error('Failed to fetch markets');
+    }
+    return response.json();
+}
+
+async function fetchQuote(
+    marketId: string,
+    amount: string,
+    outcome: Outcome
+): Promise<BetQuote> {
+    const response = await fetch(
+        `/api/amm/quote?marketId=${marketId}&amount=${amount}&outcome=${outcome}`
+    );
+    if (!response.ok) {
+        throw new Error('Failed to get quote');
+    }
+    return response.json();
+}
+
+async function fetchPosition(
+    marketId: string,
+    userId: string
+): Promise<{ position: Position | null }> {
+    const response = await fetch(`/api/amm/position/${marketId}/${userId}`);
+    if (!response.ok) {
+        throw new Error('Failed to get position');
+    }
+    return response.json();
+}
+
+async function placeBet(params: {
+    marketId: string;
+    userId: string;
+    amount: string;
+    outcome: Outcome;
+}): Promise<BetResult> {
+    const response = await fetch('/api/amm/bet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to place bet');
+    }
+    return response.json();
+}
+
+async function sellPosition(params: {
+    marketId: string;
+    userId: string;
+    amount: string;
+    outcome: Outcome;
+}): Promise<SellResult> {
+    const response = await fetch('/api/amm/sell', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to sell position');
+    }
+    return response.json();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HOOKS
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Hook to fetch all active markets
+ */
+export function useMarkets() {
+    return useQuery({
+        queryKey: ammKeys.markets(),
+        queryFn: fetchMarkets,
+        staleTime: 10 * 1000, // 10 seconds
+        refetchInterval: 30 * 1000, // Refetch every 30 seconds
+    });
+}
+
+/**
+ * Hook to get a bet quote
+ */
+export function useQuote(
+    marketId: string | null,
+    amount: string,
+    outcome: Outcome | null,
+    enabled = true
+) {
+    return useQuery({
+        queryKey: ammKeys.quote(marketId || '', amount, outcome || Outcome.YES),
+        queryFn: () => fetchQuote(marketId!, amount, outcome!),
+        enabled: enabled && !!marketId && !!amount && amount !== '0' && !!outcome,
+        staleTime: 5 * 1000, // 5 seconds
+    });
+}
+
+/**
+ * Hook to get user's position in a market
+ */
+export function usePosition(marketId: string | null, userId: string | null) {
+    return useQuery({
+        queryKey: ammKeys.position(marketId || '', userId || ''),
+        queryFn: () => fetchPosition(marketId!, userId!),
+        enabled: !!marketId && !!userId,
+        staleTime: 10 * 1000,
+    });
+}
+
+/**
+ * Hook to place a bet
+ */
+export function usePlaceBet() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: placeBet,
+        onSuccess: (data, variables) => {
+            // Invalidate markets to update prices
+            queryClient.invalidateQueries({ queryKey: ammKeys.markets() });
+            // Invalidate user's position
+            queryClient.invalidateQueries({
+                queryKey: ammKeys.position(variables.marketId, variables.userId)
+            });
+        },
+    });
+}
+
+/**
+ * Hook to sell a position
+ */
+export function useSellPosition() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: sellPosition,
+        onSuccess: (data, variables) => {
+            // Invalidate markets to update prices
+            queryClient.invalidateQueries({ queryKey: ammKeys.markets() });
+            // Invalidate user's position
+            queryClient.invalidateQueries({
+                queryKey: ammKeys.position(variables.marketId, variables.userId)
+            });
+        },
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CREATE MARKET
+// ═══════════════════════════════════════════════════════════════════════════
+
+interface CreateMarketParams {
+    marketId: string;
+    title: string;
+    description?: string;
+    initialLiquidity: string; // USDC amount in base units
+}
+
+async function createMarket(params: CreateMarketParams): Promise<{ success: boolean; pool: any }> {
+    const response = await fetch('/api/amm/markets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            marketId: params.marketId,
+            initialLiquidity: params.initialLiquidity
+        }),
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to create market');
+    }
+    return response.json();
+}
+
+/**
+ * Hook to create a new prediction market
+ */
+export function useCreateMarket() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: createMarket,
+        onSuccess: () => {
+            // Invalidate markets to refresh the list
+            queryClient.invalidateQueries({ queryKey: ammKeys.markets() });
+        },
+    });
+}
+

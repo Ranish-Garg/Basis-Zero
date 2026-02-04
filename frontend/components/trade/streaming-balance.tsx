@@ -71,8 +71,8 @@ export function StreamingBalance({
             </div>
 
             {/* Main Balance Display - The Streaming Counter */}
-            <div className="text-center py-4">
-                <div className="font-mono text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight">
+            <div className="text-center py-4 overflow-hidden">
+                <div className="font-mono text-2xl sm:text-4xl lg:text-5xl font-bold tracking-tight">
                     <span className="text-foreground">$</span>
                     <span className={cn(
                         "transition-colors duration-300",
@@ -81,7 +81,7 @@ export function StreamingBalance({
                         {displayValue.split('.')[0]}
                     </span>
                     <span className="text-primary">.</span>
-                    <span className="text-primary text-3xl sm:text-4xl lg:text-5xl">
+                    <span className="text-primary text-xl sm:text-3xl lg:text-4xl">
                         {displayValue.split('.')[1]}
                     </span>
                 </div>
