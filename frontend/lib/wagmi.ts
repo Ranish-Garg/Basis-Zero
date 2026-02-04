@@ -1,12 +1,12 @@
 import { getDefaultConfig } from '@rainbow-me/rainbowkit';
 import { defineChain } from 'viem';
-import { polygonAmoy } from 'wagmi/chains';
+import { polygonAmoy, sepolia, baseSepolia } from 'wagmi/chains';
 import { createStorage } from 'wagmi';
 
 export const arcTestnet = defineChain({
   id: 5042002, // From backend .env
   name: 'Arc Testnet',
-  nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 18 },
+  nativeCurrency: { name: 'USDC', symbol: 'USDC', decimals: 6 },
   rpcUrls: {
     default: { http: ['https://arc-testnet.g.alchemy.com/v2/z_DE8LsUHA5hYcxxNShYo'] }, 
   },
@@ -31,13 +31,7 @@ const safeStorage = {
 export const config = getDefaultConfig({
   appName: 'Basis Zero',
   projectId: 'YOUR_PROJECT_ID', // TODO: Get from Reown/WalletConnect or use env
-  chains: [platformChain(), polygonAmoy], // Arc for Vault, Amoy for Trading
-  /* storage: createStorage({
-    storage: safeStorage,
-  }), */
-  ssr: false, // If your dApp uses server side rendering (Next.js)
+  chains: [arcTestnet, polygonAmoy, sepolia, baseSepolia], // All supported chains
+  ssr: false,
 });
 
-function platformChain() {
-  return arcTestnet;
-}
