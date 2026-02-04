@@ -1,28 +1,47 @@
 "use client"
 
 import { useState } from "react"
-import { Plus, X, Loader2, CheckCircle } from "lucide-react"
+import { Plus, X, Loader2, CheckCircle, Calendar } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCreateMarket } from "@/hooks/use-amm"
-import { Outcome, parseUSDCInput } from "@/lib/amm-types"
+import { parseUSDCInput } from "@/lib/amm-types"
 
 interface CreateMarketDialogProps {
     isOpen: boolean
     onClose: () => void
 }
 
+// Category options
+const categories = [
+    { id: "crypto", label: "Crypto" },
+    { id: "sports", label: "Sports" },
+    { id: "macro", label: "Macro/Economy" },
+    { id: "politics", label: "Politics" },
+    { id: "weather", label: "Weather" },
+    { id: "other", label: "Other" },
+]
+
 export function CreateMarketDialog({ isOpen, onClose }: CreateMarketDialogProps) {
     const [title, setTitle] = useState("")
     const [description, setDescription] = useState("")
-    const [liquidity, setLiquidity] = useState("1000")
+    const [category, setCategory] = useState("crypto")
+    const [expiresAt, setExpiresAt] = useState("")
+    const [liquidity, setLiquidity] = useState("10")
     const [success, setSuccess] = useState(false)
 
     const createMarket = useCreateMarket()
 
+    // Get minimum date (tomorrow)
+    const getMinDate = () => {
+        const tomorrow = new Date()
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        return tomorrow.toISOString().split('T')[0]
+    }
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
 
-        if (!title.trim()) return
+        if (!title.trim() || !expiresAt) return
 
         // Generate marketId from title
         const marketId = title
@@ -36,6 +55,8 @@ export function CreateMarketDialog({ isOpen, onClose }: CreateMarketDialogProps)
                 marketId,
                 title,
                 description: description || undefined,
+                category,
+                expiresAt: new Date(expiresAt).toISOString(),
                 initialLiquidity: parseUSDCInput(liquidity)
             })
 
@@ -45,7 +66,9 @@ export function CreateMarketDialog({ isOpen, onClose }: CreateMarketDialogProps)
                 onClose()
                 setTitle("")
                 setDescription("")
-                setLiquidity("1000")
+                setCategory("crypto")
+                setExpiresAt("")
+                setLiquidity("10")
             }, 1500)
         } catch (error) {
             console.error('Failed to create market:', error)
@@ -63,7 +86,7 @@ export function CreateMarketDialog({ isOpen, onClose }: CreateMarketDialogProps)
             />
 
             {/* Dialog */}
-            <div className="relative w-full max-w-md mx-4 rounded-xl border border-border bg-card p-5 sm:p-6 shadow-xl overflow-hidden">
+            <div className="relative w-full max-w-md mx-4 rounded-xl border border-border bg-card p-5 sm:p-6 shadow-xl overflow-hidden max-h-[90vh] overflow-y-auto">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-6">
                     <h2 className="text-xl font-semibold">Create Prediction Market</h2>
@@ -88,7 +111,7 @@ export function CreateMarketDialog({ isOpen, onClose }: CreateMarketDialogProps)
                         {/* Market Title */}
                         <div>
                             <label className="block text-sm font-medium mb-2">
-                                Market Question
+                                Market Question *
                             </label>
                             <input
                                 type="text"
@@ -100,6 +123,46 @@ export function CreateMarketDialog({ isOpen, onClose }: CreateMarketDialogProps)
                             />
                             <p className="text-xs text-muted-foreground mt-1">
                                 Frame as a yes/no question
+                            </p>
+                        </div>
+
+                        {/* Category */}
+                        <div>
+                            <label className="block text-sm font-medium mb-2">
+                                Category *
+                            </label>
+                            <select
+                                value={category}
+                                onChange={(e) => setCategory(e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-border bg-background focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors"
+                                required
+                            >
+                                {categories.map((cat) => (
+                                    <option key={cat.id} value={cat.id}>
+                                        {cat.label}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Expiry Date */}
+                        <div>
+                            <label className="block text-sm font-medium mb-2">
+                                Resolution Date *
+                            </label>
+                            <div className="relative">
+                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <input
+                                    type="date"
+                                    value={expiresAt}
+                                    onChange={(e) => setExpiresAt(e.target.value)}
+                                    min={getMinDate()}
+                                    className="w-full pl-10 pr-3 py-2 rounded-lg border border-border bg-background focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors"
+                                    required
+                                />
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                                When should this market be resolved?
                             </p>
                         </div>
 
@@ -120,7 +183,7 @@ export function CreateMarketDialog({ isOpen, onClose }: CreateMarketDialogProps)
                         {/* Initial Liquidity */}
                         <div>
                             <label className="block text-sm font-medium mb-2">
-                                Initial Liquidity (USDC)
+                                Initial Liquidity (USDC) *
                             </label>
                             <div className="relative">
                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
@@ -130,8 +193,8 @@ export function CreateMarketDialog({ isOpen, onClose }: CreateMarketDialogProps)
                                     type="number"
                                     value={liquidity}
                                     onChange={(e) => setLiquidity(e.target.value)}
-                                    min="100"
-                                    step="100"
+                                    min="1"
+                                    step="1"
                                     className="w-full pl-7 pr-3 py-2 rounded-lg border border-border bg-background focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors"
                                     required
                                 />
@@ -151,7 +214,7 @@ export function CreateMarketDialog({ isOpen, onClose }: CreateMarketDialogProps)
                         {/* Submit Button */}
                         <button
                             type="submit"
-                            disabled={createMarket.isPending || !title.trim()}
+                            disabled={createMarket.isPending || !title.trim() || !expiresAt}
                             className={cn(
                                 "w-full py-3 rounded-lg font-medium transition-all",
                                 "bg-primary text-primary-foreground hover:bg-primary/90",

@@ -1,53 +1,92 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
-import { Shield, Lock, Unlock, TrendingUp } from "lucide-react"
+import { useState, useEffect } from "react"
+import { Shield, Lock, Unlock, TrendingUp, Wallet, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useArcVault } from "@/hooks/use-arc-vault"
 
 interface StreamingBalanceProps {
-    principal: number
-    apy: number
     safeModeEnabled: boolean
     onSafeModeToggle: (enabled: boolean) => void
 }
 
 export function StreamingBalance({
-    principal = 10000,
-    apy = 5.12,
     safeModeEnabled,
     onSafeModeToggle
 }: StreamingBalanceProps) {
-    const [currentYield, setCurrentYield] = useState(0)
-    const [displayValue, setDisplayValue] = useState("0.000000")
-    const startTimeRef = useRef<number>(Date.now())
-    const baseYieldRef = useRef<number>(0)
-
-    // Calculate yield per second based on APY
-    const yieldPerSecond = (principal * (apy / 100)) / (365 * 24 * 60 * 60)
+    // Handle hydration mismatch
+    const [mounted, setMounted] = useState(false)
 
     useEffect(() => {
-        // Simulate pre-existing yield (random amount up to 30 days worth)
-        const preExistingYield = Math.random() * yieldPerSecond * 60 * 60 * 24 * 30
-        baseYieldRef.current = preExistingYield
-        setCurrentYield(preExistingYield)
-        startTimeRef.current = Date.now()
-    }, [principal, apy, yieldPerSecond])
+        setMounted(true)
+    }, [])
 
-    useEffect(() => {
-        const intervalId = setInterval(() => {
-            const elapsedSeconds = (Date.now() - startTimeRef.current) / 1000
-            const newYield = baseYieldRef.current + (elapsedSeconds * yieldPerSecond)
-            setCurrentYield(newYield)
+    // Fetch real data from vault contract
+    const {
+        principal,
+        accruedYield,
+        totalBalance,
+        apyPercent,
+        isLoading,
+        isConnected
+    } = useArcVault()
 
-            // Format with 6 decimal places, showing the real-time increment
-            const total = principal + newYield
-            setDisplayValue(total.toFixed(6))
-        }, 50) // Update every 50ms for smooth animation
+    // Parse values for display
+    const principalNum = parseFloat(principal) || 0
+    const accruedYieldNum = parseFloat(accruedYield) || 0
+    const totalBalanceNum = parseFloat(totalBalance) || 0
+    const apyNum = parseFloat(apyPercent) || 0
 
-        return () => clearInterval(intervalId)
-    }, [principal, yieldPerSecond])
+    // Calculate daily yield rate
+    const dailyYield = (principalNum * (apyNum / 100)) / 365
 
-    const bettingPower = safeModeEnabled ? currentYield : principal + currentYield
+    const bettingPower = safeModeEnabled ? accruedYieldNum : totalBalanceNum
+
+    // Show loading skeleton during hydration to prevent mismatch
+    if (!mounted) {
+        return (
+            <div className="rounded-xl border border-border bg-card/60 glass p-6 sm:p-8 space-y-6">
+                <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+            </div>
+        )
+    }
+
+    // Show connect wallet prompt if not connected
+    if (!isConnected) {
+        return (
+            <div className="rounded-xl border border-border bg-card/60 glass p-6 sm:p-8 space-y-6">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/20 text-primary">
+                            <Wallet className="h-5 w-5" />
+                        </div>
+                        <div>
+                            <h3 className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+                                Vault Balance
+                            </h3>
+                            <p className="text-xs text-muted-foreground">Connect wallet to view</p>
+                        </div>
+                    </div>
+                </div>
+                <div className="text-center py-8">
+                    <p className="text-muted-foreground">Connect your wallet to view your vault balance</p>
+                </div>
+            </div>
+        )
+    }
+
+    // Show loading state
+    if (isLoading) {
+        return (
+            <div className="rounded-xl border border-border bg-card/60 glass p-6 sm:p-8 space-y-6">
+                <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                </div>
+            </div>
+        )
+    }
 
     return (
         <div className="rounded-xl border border-border bg-card/60 glass p-6 sm:p-8 space-y-6">
@@ -70,7 +109,7 @@ export function StreamingBalance({
                 </div>
             </div>
 
-            {/* Main Balance Display - The Streaming Counter */}
+            {/* Main Balance Display */}
             <div className="text-center py-4 overflow-hidden">
                 <div className="font-mono text-2xl sm:text-4xl lg:text-5xl font-bold tracking-tight">
                     <span className="text-foreground">$</span>
@@ -78,16 +117,14 @@ export function StreamingBalance({
                         "transition-colors duration-300",
                         safeModeEnabled ? "text-muted-foreground" : "text-foreground"
                     )}>
-                        {displayValue.split('.')[0]}
-                    </span>
-                    <span className="text-primary">.</span>
-                    <span className="text-primary text-xl sm:text-3xl lg:text-4xl">
-                        {displayValue.split('.')[1]}
+                        {totalBalanceNum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                 </div>
-                <p className="mt-2 font-mono text-xs text-muted-foreground">
-                    Earning ${(yieldPerSecond * 60 * 60 * 24).toFixed(4)}/day at {apy}% APY
-                </p>
+                {apyNum > 0 && (
+                    <p className="mt-2 font-mono text-xs text-muted-foreground">
+                        Earning ${dailyYield.toFixed(4)}/day at {apyNum}% APY
+                    </p>
+                )}
             </div>
 
             {/* Principal vs Yield Breakdown */}
@@ -108,7 +145,7 @@ export function StreamingBalance({
                         "font-mono text-xl font-bold",
                         safeModeEnabled ? "text-muted-foreground line-through" : "text-foreground"
                     )}>
-                        ${principal.toLocaleString()}
+                        ${principalNum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                     <p className="font-mono text-xs text-muted-foreground mt-1">Protected</p>
                 </div>
@@ -121,7 +158,7 @@ export function StreamingBalance({
                         </span>
                     </div>
                     <p className="font-mono text-xl font-bold text-green-500">
-                        ${currentYield.toFixed(4)}
+                        ${accruedYieldNum.toFixed(4)}
                     </p>
                     <p className="font-mono text-xs text-muted-foreground mt-1">Available</p>
                 </div>

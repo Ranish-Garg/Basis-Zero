@@ -192,15 +192,21 @@ interface CreateMarketParams {
     marketId: string;
     title: string;
     description?: string;
+    category?: string;
+    expiresAt: string; // ISO date string
     initialLiquidity: string; // USDC amount in base units
 }
 
-async function createMarket(params: CreateMarketParams): Promise<{ success: boolean; pool: any }> {
+async function createMarket(params: CreateMarketParams): Promise<{ success: boolean; market: any }> {
     const response = await fetch('/api/amm/markets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             marketId: params.marketId,
+            title: params.title,
+            description: params.description,
+            category: params.category || 'general',
+            expiresAt: params.expiresAt,
             initialLiquidity: params.initialLiquidity
         }),
     });

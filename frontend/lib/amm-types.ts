@@ -229,12 +229,19 @@ export interface SellResult {
  * @param amount Amount in base units (6 decimals)
  * @returns Formatted string like "100.00"
  */
-export function formatUSDC(amount: string | bigint): string {
-    const value = typeof amount === 'string' ? BigInt(amount) : amount;
-    const whole = value / BigInt(10 ** USDC_DECIMALS);
-    const frac = value % BigInt(10 ** USDC_DECIMALS);
-    const fracStr = frac.toString().padStart(USDC_DECIMALS, '0').slice(0, 2);
-    return `${whole}.${fracStr}`;
+export function formatUSDC(amount: string | bigint | undefined | null): string {
+    try {
+        if (amount === undefined || amount === null || amount === '') {
+            return '0.00';
+        }
+        const value = typeof amount === 'string' ? BigInt(amount) : amount;
+        const whole = value / BigInt(10 ** USDC_DECIMALS);
+        const frac = value % BigInt(10 ** USDC_DECIMALS);
+        const fracStr = frac.toString().padStart(USDC_DECIMALS, '0').slice(0, 2);
+        return `${whole}.${fracStr}`;
+    } catch {
+        return '0.00';
+    }
 }
 
 /**

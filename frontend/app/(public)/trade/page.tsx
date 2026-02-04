@@ -35,7 +35,7 @@ export default function TradePage() {
                             Prediction Markets
                         </h1>
                         <p className="max-w-2xl text-base text-muted-foreground">
-                            Trade using your accrued yield. Your principal stays protected in RWA vaults earning 5.12% APY.
+                            Trade using your accrued yield. Your principal stays protected in RWA vaults.
                         </p>
                     </div>
 
@@ -47,10 +47,8 @@ export default function TradePage() {
                 <div className="grid gap-6 lg:grid-cols-12">
                     {/* Left Column - Balance & Order Book */}
                     <div className="lg:col-span-4 space-y-6">
-                        {/* Streaming Balance Widget */}
+                        {/* Streaming Balance Widget - Fetches real vault data */}
                         <StreamingBalance
-                            principal={10000}
-                            apy={5.12}
                             safeModeEnabled={safeModeEnabled}
                             onSafeModeToggle={setSafeModeEnabled}
                         />

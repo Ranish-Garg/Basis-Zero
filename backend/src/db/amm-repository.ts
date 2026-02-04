@@ -13,6 +13,7 @@ export interface MarketRow {
     market_id: string;
     title: string;
     description: string | null;
+    category: string | null;
     expires_at: string;
     yes_reserves: string;
     no_reserves: string;
@@ -48,6 +49,7 @@ export interface CreateMarketInput {
     marketId: string;
     title: string;
     description?: string;
+    category?: string;
     expiresAt: Date;
     yesReserves: bigint;
     noReserves: bigint;
@@ -67,6 +69,7 @@ export async function createMarket(input: CreateMarketInput): Promise<MarketRow>
             market_id: input.marketId,
             title: input.title,
             description: input.description ?? null,
+            category: input.category ?? 'general',
             expires_at: input.expiresAt.toISOString(),
             yes_reserves: input.yesReserves.toString(),
             no_reserves: input.noReserves.toString(),

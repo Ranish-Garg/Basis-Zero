@@ -40,29 +40,54 @@ interface ManagedPool {
     positions: Map<string, Position>;
     status: 'active' | 'resolved' | 'cancelled';
     resolution?: MarketResolution;
+    // Market metadata
+    title: string;
+    description?: string;
+    category?: string;
+    expiresAt?: Date;
+}
+
+interface CreateMarketInput extends PoolConfig {
+    title?: string;
+    description?: string;
+    category?: string;
+    expiresAt?: Date;
 }
 
 export class PoolManager {
     private pools: Map<string, ManagedPool> = new Map();
 
-    createMarket(config: PoolConfig): PoolState {
+    createMarket(config: CreateMarketInput): PoolState & { title: string; description?: string; category?: string } {
         if (this.pools.has(config.marketId)) {
             throw new Error(`Market ${config.marketId} already exists`);
         }
         const pool = createPool(config);
-        this.pools.set(config.marketId, { pool, positions: new Map(), status: 'active' });
-        console.log(`[PoolManager] Created market: ${config.marketId}`);
-        return pool;
+        this.pools.set(config.marketId, {
+            pool,
+            positions: new Map(),
+            status: 'active',
+            title: config.title || config.marketId,
+            description: config.description,
+            category: config.category || 'general',
+            expiresAt: config.expiresAt
+        });
+        console.log(`[PoolManager] Created market: ${config.marketId} - ${config.title}`);
+        return { ...pool, title: config.title || config.marketId, description: config.description, category: config.category };
     }
 
     getPool(marketId: string): PoolState | null {
         return this.pools.get(marketId)?.pool ?? null;
     }
 
-    getActiveMarkets(): PoolState[] {
+    getActiveMarkets(): (PoolState & { title: string; description?: string; category?: string })[] {
         return Array.from(this.pools.values())
             .filter(m => m.status === 'active')
-            .map(m => m.pool);
+            .map(m => ({
+                ...m.pool,
+                title: m.title,
+                description: m.description,
+                category: m.category
+            }));
     }
 
     placeBet(marketId: string, userId: string, usdcAmount: bigint, betOn: Outcome): BetResult {
