@@ -134,6 +134,72 @@ export function useArcVault() {
         })
     }
 
+    // --- Start Session functionality ---
+    const { writeContract: writeStartSession, data: sessionHash, isPending: isStartingSession, error: startSessionError } = useWriteContract()
+    const { isLoading: isWaitingSession, isSuccess: isSessionStartSuccess } = useWaitForTransactionReceipt({ hash: sessionHash })
+
+    const startSession = async (amount: string, safeMode: boolean = true) => {
+        if (!isConnected || !address) return null
+
+        // Ensure on correct chain
+        if (chainId !== arcTestnet.id) {
+            switchChain({ chainId: arcTestnet.id })
+            return null
+        }
+
+        // Generate unique sessionId: keccak256(user + timestamp + random)
+        const timestamp = Date.now()
+        const random = Math.floor(Math.random() * 1000000)
+        const sessionIdData = `${address}${timestamp}${random}`
+        const encoder = new TextEncoder()
+        const data = encoder.encode(sessionIdData)
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+        const hashArray = Array.from(new Uint8Array(hashBuffer))
+        const sessionId = ('0x' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('')) as `0x${string}`
+
+        const amountBig = parseUnits(amount, 6) // USDC uses 6 decimals
+
+        // Call lockSessionAllowance on contract
+        writeStartSession({
+            address: ARC_VAULT_ADDRESS,
+            abi: ARC_VAULT_ABI,
+            functionName: "lockSessionAllowance",
+            args: [amountBig, sessionId]
+        })
+
+        // Return sessionId so caller can notify backend after tx confirms
+        return { sessionId, amount, safeMode }
+    }
+
+    // Notify backend when session starts (call after isSessionStartSuccess)
+    const notifyBackendSessionStart = async (sessionId: string, collateral: string, safeMode: boolean) => {
+        if (!address) return null
+        
+        try {
+            const rwaRate = apyData.apyBps
+            const response = await fetch("http://localhost:3001/api/session/open", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    user: address,
+                    collateral,
+                    safeModeEnabled: safeMode,
+                    rwaRateBps: rwaRate
+                })
+            })
+            
+            if (!response.ok) {
+                throw new Error("Failed to open backend session")
+            }
+            
+            const result = await response.json()
+            return result
+        } catch (error) {
+            console.error("Backend session notification failed:", error)
+            return null
+        }
+    }
+
     const refetch = () => {
         refetchDeposit()
         refetchSession()
@@ -170,6 +236,13 @@ export function useArcVault() {
         isWithdrawing: isWithdrawing || isWaitingWithdraw,
         isWithdrawSuccess,
         withdrawError,
+        
+        // Session actions
+        startSession,
+        notifyBackendSessionStart,
+        isStartingSession: isStartingSession || isWaitingSession,
+        isSessionStartSuccess,
+        startSessionError,
         
         // Refetch
         refetch

@@ -1,19 +1,10 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Shield, Lock, Unlock, TrendingUp, Wallet, Loader2 } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { Shield, TrendingUp, Wallet, Loader2 } from "lucide-react"
 import { useArcVault } from "@/hooks/use-arc-vault"
 
-interface StreamingBalanceProps {
-    safeModeEnabled: boolean
-    onSafeModeToggle: (enabled: boolean) => void
-}
-
-export function StreamingBalance({
-    safeModeEnabled,
-    onSafeModeToggle
-}: StreamingBalanceProps) {
+export function StreamingBalance() {
     // Handle hydration mismatch
     const [mounted, setMounted] = useState(false)
 
@@ -39,8 +30,6 @@ export function StreamingBalance({
 
     // Calculate daily yield rate
     const dailyYield = (principalNum * (apyNum / 100)) / 365
-
-    const bettingPower = safeModeEnabled ? accruedYieldNum : totalBalanceNum
 
     // Show loading skeleton during hydration to prevent mismatch
     if (!mounted) {
@@ -113,10 +102,7 @@ export function StreamingBalance({
             <div className="text-center py-4 overflow-hidden">
                 <div className="font-mono text-2xl sm:text-4xl lg:text-5xl font-bold tracking-tight">
                     <span className="text-foreground">$</span>
-                    <span className={cn(
-                        "transition-colors duration-300",
-                        safeModeEnabled ? "text-muted-foreground" : "text-foreground"
-                    )}>
+                    <span className="text-foreground">
                         {totalBalanceNum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                 </div>
@@ -129,25 +115,17 @@ export function StreamingBalance({
 
             {/* Principal vs Yield Breakdown */}
             <div className="grid grid-cols-2 gap-4">
-                <div className={cn(
-                    "rounded-lg border p-4 transition-all duration-300",
-                    safeModeEnabled
-                        ? "border-border/50 bg-secondary/30 opacity-50"
-                        : "border-blue-500/30 bg-blue-500/10"
-                )}>
+                <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
                     <div className="flex items-center gap-2 mb-2">
                         <Shield className="h-4 w-4 text-blue-500" />
                         <span className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
                             Principal
                         </span>
                     </div>
-                    <p className={cn(
-                        "font-mono text-xl font-bold",
-                        safeModeEnabled ? "text-muted-foreground line-through" : "text-foreground"
-                    )}>
+                    <p className="font-mono text-xl font-bold text-foreground">
                         ${principalNum.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
-                    <p className="font-mono text-xs text-muted-foreground mt-1">Protected</p>
+                    <p className="font-mono text-xs text-muted-foreground mt-1">Deposited</p>
                 </div>
 
                 <div className="rounded-lg border border-green-500/30 bg-green-500/10 p-4">
@@ -160,57 +138,19 @@ export function StreamingBalance({
                     <p className="font-mono text-xl font-bold text-green-500">
                         ${accruedYieldNum.toFixed(4)}
                     </p>
-                    <p className="font-mono text-xs text-muted-foreground mt-1">Available</p>
+                    <p className="font-mono text-xs text-muted-foreground mt-1">Earned</p>
                 </div>
             </div>
 
-            {/* Safe Mode Toggle */}
+            {/* Betting Power Display */}
             <div className="border-t border-border/50 pt-6">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        {safeModeEnabled ? (
-                            <Lock className="h-5 w-5 text-primary" />
-                        ) : (
-                            <Unlock className="h-5 w-5 text-muted-foreground" />
-                        )}
-                        <div>
-                            <p className="font-medium text-foreground">Safe Mode</p>
-                            <p className="text-xs text-muted-foreground">
-                                {safeModeEnabled
-                                    ? "Only yield is available for trading"
-                                    : "Full balance available for trading"
-                                }
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Toggle Switch */}
-                    <button
-                        onClick={() => onSafeModeToggle(!safeModeEnabled)}
-                        className={cn(
-                            "relative h-7 w-14 rounded-full transition-colors duration-300",
-                            safeModeEnabled
-                                ? "bg-primary"
-                                : "bg-secondary"
-                        )}
-                    >
-                        <span
-                            className={cn(
-                                "absolute top-1 h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-300",
-                                safeModeEnabled ? "left-8" : "left-1"
-                            )}
-                        />
-                    </button>
-                </div>
-
-                {/* Betting Power Display */}
-                <div className="mt-4 rounded-lg border border-primary/30 bg-primary/10 p-4">
+                <div className="rounded-lg border border-primary/30 bg-primary/10 p-4">
                     <div className="flex items-center justify-between">
                         <span className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-                            Betting Power
+                            Available for Trading
                         </span>
                         <span className="font-mono text-lg font-bold text-primary">
-                            ${bettingPower.toFixed(2)}
+                            ${totalBalanceNum.toFixed(2)}
                         </span>
                     </div>
                 </div>

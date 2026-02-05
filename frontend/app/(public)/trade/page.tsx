@@ -1,21 +1,34 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import dynamic from 'next/dynamic'
 import { StreamingBalance } from "@/components/trade/streaming-balance"
 import { MarketGrid } from "@/components/trade/market-grid"
 import { OrderBook } from "@/components/trade/order-book"
 import { CreateMarketDialog, CreateMarketButton } from "@/components/trade/create-market-dialog"
 import { useMarkets } from "@/hooks/use-amm"
+import { useArcVault, SessionState } from "@/hooks/use-arc-vault"
 import type { Market } from "@/lib/amm-types"
 
+const SessionStartWidget = dynamic(
+    () => import('@/components/vault/session-start-widget').then(mod => mod.SessionStartWidget),
+    { ssr: false }
+)
+
 export default function TradePage() {
-    const [safeModeEnabled, setSafeModeEnabled] = useState(true)
     const [activeCategory, setActiveCategory] = useState("all")
     const [selectedMarketId, setSelectedMarketId] = useState<string | null>(null)
     const [showCreateDialog, setShowCreateDialog] = useState(false)
+    const [mounted, setMounted] = useState(false)
+
+    useEffect(() => setMounted(true), [])
 
     // Fetch markets to get the selected market details
     const { data: marketsData } = useMarkets()
+    
+    // Check session state from vault
+    const { sessionState, isConnected } = useArcVault()
+    const hasActiveSession = sessionState === SessionState.Active || sessionState === SessionState.PendingBridge
 
     // Find the selected market from the markets list
     const selectedMarket: Market | null = selectedMarketId
@@ -35,7 +48,7 @@ export default function TradePage() {
                             Prediction Markets
                         </h1>
                         <p className="max-w-2xl text-base text-muted-foreground">
-                            Trade using your accrued yield. Your principal stays protected in RWA vaults.
+                            Trade using your vault balance. Your principal earns yield in RWA vaults.
                         </p>
                     </div>
 
@@ -48,10 +61,12 @@ export default function TradePage() {
                     {/* Left Column - Balance & Order Book */}
                     <div className="lg:col-span-4 space-y-6">
                         {/* Streaming Balance Widget - Fetches real vault data */}
-                        <StreamingBalance
-                            safeModeEnabled={safeModeEnabled}
-                            onSafeModeToggle={setSafeModeEnabled}
-                        />
+                        <StreamingBalance />
+
+                        {/* Session Start Widget - Shows when no active session */}
+                        {mounted && isConnected && !hasActiveSession && (
+                            <SessionStartWidget />
+                        )}
 
                         {/* Order Book / Trade Panel */}
                         <OrderBook

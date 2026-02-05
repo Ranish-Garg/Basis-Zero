@@ -1,43 +1,74 @@
 "use client"
 
-import { Wifi, WifiOff, Zap, Clock, RefreshCw, Loader2, ArrowRight } from "lucide-react"
+import { useState, useEffect } from "react"
+import { Wifi, WifiOff, Zap, Clock, RefreshCw, Loader2, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useYellowSession } from "@/hooks/use-yellow-session"
-import { useSessionEscrow } from "@/hooks/use-session-escrow"
-import { useState } from "react"
-import { formatUnits } from "viem"
+import { useArcVault, SessionState } from "@/hooks/use-arc-vault"
+import { useWriteContract, useWaitForTransactionReceipt, useAccount } from "wagmi"
+import { ARC_VAULT_ADDRESS, ARC_VAULT_ABI } from "@/lib/contracts"
 
 export function SessionManager() {
-    const { session, balance: streamBalance, isLoading, openSession, closeSession, refresh: refreshSession } = useYellowSession()
-    const { balance: escrowBalance, deposit: depositToEscrow, isApproving, isDepositing } = useSessionEscrow()
+    const { 
+        sessionState, 
+        lockedAmount, 
+        sessionId, 
+        sessionStartedAt,
+        timeUntilTimeout,
+        isLoading,
+        refetch 
+    } = useArcVault()
     
-    // UI State for Open Channel
-    const [amount, setAmount] = useState("100") // Default 100 USDC
+    const { address } = useAccount()
     
-    const handleOpenChannel = async () => {
-        try {
-            // 1. Deposit to Escrow
-            // Only mocked for now if user confirms? 
-            // The hook handles approve + deposit transaction flow
-            await depositToEscrow(amount)
-            
-            // 2. Open Backend Session
-            // In real app, we wait for deposit confirmation/events. 
-            // For now assuming success or optimistic update
-            // (Note: The hook returns early 'depositing' string, need better promise handling in hook later)
-            // But let's trigger openSession
-            await openSession(amount + "000000", true) // 6 decimals string
-        } catch (e) {
-            console.error(e)
+    // Cancel session tx
+    const { writeContract: writeCancelSession, data: cancelHash, isPending: isCancelling } = useWriteContract()
+    const { isLoading: isWaitingCancel, isSuccess: isCancelSuccess } = useWaitForTransactionReceipt({ hash: cancelHash })
+
+    // Refetch after cancel
+    useEffect(() => {
+        if (isCancelSuccess) {
+            refetch()
+        }
+    }, [isCancelSuccess])
+
+    const isSessionActive = sessionState === SessionState.Active || sessionState === SessionState.PendingBridge
+    const isPendingBridge = sessionState === SessionState.PendingBridge
+    const canCancel = isPendingBridge && timeUntilTimeout <= 0
+    
+    // Format session duration
+    const formatDuration = () => {
+        if (!sessionStartedAt || sessionStartedAt === 0) return "N/A"
+        const now = Math.floor(Date.now() / 1000)
+        const duration = now - sessionStartedAt
+        const minutes = Math.floor(duration / 60)
+        const seconds = duration % 60
+        return `${minutes}m ${seconds}s`
+    }
+
+    // Get session state label
+    const getSessionLabel = () => {
+        switch (sessionState) {
+            case SessionState.None: return "No Session"
+            case SessionState.PendingBridge: return "Pending Bridge"
+            case SessionState.Active: return "Active"
+            case SessionState.Settled: return "Settled"
+            case SessionState.Cancelled: return "Cancelled"
+            default: return "Unknown"
         }
     }
 
-    const isSessionActive = session?.status === "active"
-    const totalChannelBalance = streamBalance ? parseFloat(formatUnits(BigInt(streamBalance.available), 6)) : 0
-    // Mock duration for now or calc from createdAt
-    const sessionDuration = session ? "Active" : "Inactive"
+    const handleCancelSession = () => {
+        if (!address) return
+        
+        writeCancelSession({
+            address: ARC_VAULT_ADDRESS,
+            abi: ARC_VAULT_ABI,
+            functionName: "cancelTimedOutSession",
+            args: [address]
+        })
+    }
 
-    const isProcessing = isLoading || isApproving || isDepositing
+    const isProcessing = isCancelling || isWaitingCancel
 
     return (
         <div className="rounded-xl border border-border bg-card/60 glass overflow-hidden">
@@ -47,24 +78,24 @@ export function SessionManager() {
                     <div className="flex items-center gap-2">
                         <Zap className="h-4 w-4 text-primary" />
                         <h3 className="font-mono text-xs uppercase tracking-wider text-primary">
-                            Yellow Session
+                            On-Chain Session
                         </h3>
                     </div>
                     <div className={cn(
                         "flex items-center gap-2 px-2 py-1 rounded-full text-xs font-mono",
                         isSessionActive
                             ? "bg-green-500/20 text-green-500"
-                            : "bg-red-500/20 text-red-500"
+                            : "bg-muted/20 text-muted-foreground"
                     )}>
                         {isSessionActive ? (
                             <>
                                 <Wifi className="h-3 w-3" />
-                                Session Active
+                                {getSessionLabel()}
                             </>
                         ) : (
                             <>
                                 <WifiOff className="h-3 w-3" />
-                                Disconnected
+                                {getSessionLabel()}
                             </>
                         )}
                     </div>
@@ -72,104 +103,119 @@ export function SessionManager() {
             </div>
 
             <div className="p-6 space-y-6">
-                {/* Session Stats */}
-                <div className="grid grid-cols-3 gap-4">
-                    <div className="text-center p-3 rounded-lg bg-secondary/30">
-                        <p className="font-mono text-xl font-bold text-foreground">
-                            {session ? 1 : 0}
-                        </p>
-                        <p className="font-mono text-[10px] text-muted-foreground uppercase">Active Channels</p>
-                    </div>
-                    <div className="text-center p-3 rounded-lg bg-secondary/30">
-                        <p className="font-mono text-xl font-bold text-primary">
-                           ${totalChannelBalance.toFixed(2)}
-                        </p>
-                        <p className="font-mono text-[10px] text-muted-foreground uppercase">Channel Balance</p>
-                    </div>
-                    <div className="text-center p-3 rounded-lg bg-secondary/30">
-                        <p className="font-mono text-xl font-bold text-foreground">
-                            {sessionDuration}
-                        </p>
-                        <p className="font-mono text-[10px] text-muted-foreground uppercase">Session State</p>
-                    </div>
-                </div>
-
-                {/* Channels List */}
-                <div>
-                    <div className="flex items-center justify-between mb-3">
-                        <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
-                            Active Session
-                        </p>
-                        <button 
-                            onClick={refreshSession}
-                            className="text-xs text-primary hover:underline flex items-center gap-1"
-                        >
-                            <RefreshCw className="h-3 w-3" />
-                            Refresh
-                        </button>
-                    </div>
-
-                    <div className="space-y-2">
-                        {session ? (
-                            <div className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-secondary/20 hover:bg-secondary/40 transition-colors">
-                                <div className="flex items-center gap-3">
-                                    <div className="h-2 w-2 rounded-full bg-green-500" />
-                                    <div>
-                                        <p className="text-sm font-medium">Yellow Network Hub</p>
-                                        <p className="font-mono text-xs text-muted-foreground">{session.sessionId}</p>
-                                    </div>
-                                </div>
-                                <div className="text-right">
-                                    <p className="font-mono text-sm font-medium">
-                                        Collateral: ${(parseFloat(session.collateral)/1e6).toFixed(2)}
-                                    </p>
-                                    <p className="flex items-center gap-1 text-xs text-muted-foreground">
-                                        <Clock className="h-3 w-3" />
-                                        Just now
-                                    </p>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="p-4 text-center text-sm text-muted-foreground border border-dashed border-border/50 rounded-lg">
-                                No active sessions. Start one to begin trading.
-                            </div>
-                        )}
-                    </div>
-                </div>
-
-                {/* Actions */}
-                {!isSessionActive ? (
-                    <div className="space-y-3">
-                        <div className="flex gap-2">
-                            <input 
-                                type="number" 
-                                value={amount}
-                                onChange={(e) => setAmount(e.target.value)}
-                                className="flex-1 bg-secondary/50 border border-border rounded-lg px-3 py-2 text-sm font-mono"
-                                placeholder="Amount USDC"
-                            />
-                            <button 
-                                onClick={handleOpenChannel}
-                                disabled={isProcessing}
-                                className="px-6 py-2 bg-primary text-primary-foreground rounded-lg font-medium hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2"
-                            >
-                                {isProcessing && <Loader2 className="h-4 w-4 animate-spin" />}
-                                Start Session
-                            </button>
-                        </div>
-                        <p className="text-xs text-muted-foreground text-center">
-                            Escrow Balance: {escrowBalance} USDC
-                        </p>
+                {isLoading ? (
+                    <div className="flex items-center justify-center py-8">
+                        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                     </div>
                 ) : (
-                    <button 
-                        onClick={() => closeSession()}
-                        disabled={isProcessing}
-                        className="w-full py-3 rounded-lg border border-red-500/20 bg-red-500/10 text-red-500 font-mono text-sm hover:bg-red-500/20 transition-colors flex items-center justify-center gap-2"
-                    >
-                        {isProcessing && <Loader2 className="h-4 w-4 animate-spin" />}
-                        Close Channel & Settle
-                    </button>
+                    <>
+                        {/* Session Stats */}
+                        <div className="grid grid-cols-3 gap-4">
+                            <div className="text-center p-3 rounded-lg bg-secondary/30">
+                                <p className="font-mono text-xl font-bold text-foreground">
+                                    {isSessionActive ? 1 : 0}
+                                </p>
+                                <p className="font-mono text-[10px] text-muted-foreground uppercase">Active</p>
+                            </div>
+                            <div className="text-center p-3 rounded-lg bg-secondary/30">
+                                <p className="font-mono text-xl font-bold text-primary">
+                                    ${parseFloat(lockedAmount).toFixed(2)}
+                                </p>
+                                <p className="font-mono text-[10px] text-muted-foreground uppercase">Locked</p>
+                            </div>
+                            <div className="text-center p-3 rounded-lg bg-secondary/30">
+                                <p className="font-mono text-xl font-bold text-foreground">
+                                    {isSessionActive ? formatDuration() : "N/A"}
+                                </p>
+                                <p className="font-mono text-[10px] text-muted-foreground uppercase">Duration</p>
+                            </div>
+                        </div>
+
+                        {/* Session Details */}
+                        {isSessionActive && (
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between mb-3">
+                                    <p className="font-mono text-xs text-muted-foreground uppercase tracking-wider">
+                                        Session Details
+                                    </p>
+                                    <button 
+                                        onClick={() => refetch()}
+                                        className="text-xs text-primary hover:underline flex items-center gap-1"
+                                    >
+                                        <RefreshCw className="h-3 w-3" />
+                                        Refresh
+                                    </button>
+                                </div>
+
+                                <div className="p-4 rounded-lg border border-border/50 bg-secondary/20 space-y-2">
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-muted-foreground">Session ID</span>
+                                        <span className="font-mono text-xs truncate max-w-[180px]">{sessionId}</span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-muted-foreground">State</span>
+                                        <span className={cn(
+                                            "font-mono text-xs px-2 py-0.5 rounded",
+                                            isPendingBridge ? "bg-yellow-500/20 text-yellow-500" : "bg-green-500/20 text-green-500"
+                                        )}>
+                                            {getSessionLabel()}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-sm">
+                                        <span className="text-muted-foreground">Locked Amount</span>
+                                        <span className="font-mono">${parseFloat(lockedAmount).toFixed(2)}</span>
+                                    </div>
+                                    {isPendingBridge && (
+                                        <div className="flex items-center justify-between text-sm">
+                                            <span className="text-muted-foreground">Timeout In</span>
+                                            <span className="font-mono flex items-center gap-1">
+                                                <Clock className="h-3 w-3" />
+                                                {timeUntilTimeout > 0 ? `${timeUntilTimeout}s` : "Expired"}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* No Active Session */}
+                        {!isSessionActive && (
+                            <div className="p-6 text-center border border-dashed border-border/50 rounded-lg">
+                                <WifiOff className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
+                                <p className="text-sm text-muted-foreground">
+                                    No active session. Go to the Trade page to start one.
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Cancel Button (for PendingBridge after timeout) */}
+                        {isPendingBridge && (
+                            <div className="space-y-2">
+                                <button 
+                                    onClick={handleCancelSession}
+                                    disabled={!canCancel || isProcessing}
+                                    className={cn(
+                                        "w-full py-3 rounded-lg font-mono text-sm transition-colors flex items-center justify-center gap-2",
+                                        canCancel && !isProcessing
+                                            ? "border border-red-500/20 bg-red-500/10 text-red-500 hover:bg-red-500/20"
+                                            : "bg-secondary text-muted-foreground cursor-not-allowed"
+                                    )}
+                                >
+                                    {isProcessing ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <XCircle className="h-4 w-4" />
+                                    )}
+                                    {canCancel ? "Cancel Session (Timeout)" : "Wait for Timeout to Cancel"}
+                                </button>
+                                {!canCancel && (
+                                    <p className="text-xs text-muted-foreground text-center">
+                                        Session can be cancelled after 1 hour timeout
+                                    </p>
+                                )}
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
         </div>

@@ -9,21 +9,23 @@ export function useSessionEscrow() {
     const { address, isConnected } = useAccount()
     const [balance, setBalance] = useState("0")
 
-    // Read Balance
+    // Read Balance (Polygon Amoy = chainId 80002)
     const { data: balanceData, refetch: refetchBalance } = useReadContract({
         address: SESSION_ESCROW_ADDRESS,
         abi: SESSION_ESCROW_ABI,
         functionName: "balances",
         args: [address!],
+        chainId: 80002,
         query: { enabled: !!address }
     })
 
-    // Read Allowance
+    // Read Allowance (Polygon Amoy = chainId 80002)
     const { data: allowanceData, refetch: refetchAllowance } = useReadContract({
         address: POLYGON_USDC_ADDRESS,
         abi: ERC20_ABI,
         functionName: "allowance",
         args: [address!, SESSION_ESCROW_ADDRESS],
+        chainId: 80002,
         query: { enabled: !!address }
     })
 
