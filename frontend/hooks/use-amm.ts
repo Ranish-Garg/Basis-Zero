@@ -177,6 +177,8 @@ export function usePlaceBet() {
             queryClient.invalidateQueries({
                 queryKey: ammKeys.position(variables.marketId, variables.userId)
             });
+            // Invalidate streaming balance so Max amount updates after trade
+            queryClient.invalidateQueries({ queryKey: ['streaming-balance-for-trade'] });
         },
     });
 }
@@ -196,6 +198,8 @@ export function useSellPosition() {
             queryClient.invalidateQueries({
                 queryKey: ammKeys.position(variables.marketId, variables.userId)
             });
+            // Invalidate streaming balance so Max amount updates after sell
+            queryClient.invalidateQueries({ queryKey: ['streaming-balance-for-trade'] });
         },
     });
 }

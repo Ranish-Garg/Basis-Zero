@@ -18,7 +18,7 @@ export function useSessionEscrow() {
     const { address, isConnected } = useAccount()
     const chainId = useChainId()
     const { switchChain } = useSwitchChain()
-    
+
     // Local state for generated sessionId
     const [pendingSessionId, setPendingSessionId] = useState<Hex | null>(null)
 
@@ -75,13 +75,13 @@ export function useSessionEscrow() {
         if (!accountInfo) return null
         // Contract returns: [principal, yield, locked, activeSessionId, state]
         const [principal, accruedYield, locked, activeSessionId, state] = accountInfo as [bigint, bigint, bigint, Hex, number]
-        
+
         // Calculate available principal to withdraw/lock
         const availablePrincipal = principal - locked
-        
+
         // Total Value = Principal + Yield
         const totalBalance = principal + accruedYield
-        
+
         // Withdrawable = Available Principal + Yield (assuming you can withdraw both)
         const withdrawable = availablePrincipal + accruedYield
 
@@ -172,11 +172,11 @@ export function useSessionEscrow() {
 
     const startSession = async (amount: string, safeMode: boolean = true) => {
         if (!ensureChain()) return null
-        
+
         // Generate sessionId
         const sessionId = await generateSessionId()
         setPendingSessionId(sessionId)
-        
+
         const amountBig = parseUnits(amount, 6)
 
         writeOpenSession({
@@ -191,15 +191,15 @@ export function useSessionEscrow() {
 
     // Backend Notification - call after contract tx confirms
     const notifyBackendSessionStart = useCallback(async (
-        sessionId: Hex, 
-        collateral: string, 
+        sessionId: Hex,
+        collateral: string,
         safeMode: boolean
     ) => {
         if (!address) return null
-        
+
         try {
             const collateralBig = parseUnits(collateral, 6).toString()
-            
+
             const response = await fetch(`${BACKEND_URL}/api/session/open`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -211,7 +211,7 @@ export function useSessionEscrow() {
                     rwaRateBps: yieldRateBps || 5200 // Use fetched rate or default
                 })
             })
-            
+
             if (!response.ok) {
                 const error = await response.json()
                 console.error("Backend session open failed:", error)
@@ -230,19 +230,19 @@ export function useSessionEscrow() {
         if (!sessionId || sessionId === '0x0000000000000000000000000000000000000000000000000000000000000000') {
             throw new Error("No active session")
         }
-        
+
         try {
             const response = await fetch(`${BACKEND_URL}/api/session/close`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ sessionId })
             })
-            
+
             if (!response.ok) {
                 const error = await response.json()
                 throw new Error(error.error || "Failed to close session")
             }
-            
+
             const data = await response.json()
             // Returns: { success, pnl, signature, sessionId }
             return data
@@ -256,12 +256,12 @@ export function useSessionEscrow() {
     const recoverSession = useCallback(async () => {
         const sessionId = parsedAccount?.activeSessionId
         const locked = parsedAccount?.locked
-        
+
         if (!sessionId || !address || !locked) return null
-        
+
         try {
             const collateralBig = parseUnits(locked, 6).toString()
-            
+
             const response = await fetch(`${BACKEND_URL}/api/session/recover`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -273,7 +273,7 @@ export function useSessionEscrow() {
                 })
             })
 
-            
+
             if (!response.ok) {
                 // Try to parse JSON, fallback to text if HTML returned (404/500)
                 try {
@@ -294,13 +294,15 @@ export function useSessionEscrow() {
 
 
     // Get streaming balance from backend
-    const fetchStreamingBalance = useCallback(async (safeMode: boolean = true) => {
-        const sessionId = parsedAccount?.activeSessionId
+    // Accepts optional sessionIdOverride to avoid stale closure issues
+    const fetchStreamingBalance = useCallback(async (safeMode: boolean = true, sessionIdOverride?: string) => {
+        const sessionId = sessionIdOverride || parsedAccount?.activeSessionId
         if (!sessionId || sessionId === '0x0000000000000000000000000000000000000000000000000000000000000000') {
             return { principal: "0", yield: "0", openBets: "0", available: "0" }
         }
-        
+
         try {
+            console.log(`[useSessionEscrow] Fetching balance for ${sessionId} (safeMode: ${safeMode})`)
             const response = await fetch(`${BACKEND_URL}/api/session/${sessionId}/balance?safeMode=${safeMode}`)
             if (!response.ok) {
                 return { principal: "0", yield: "0", openBets: "0", available: "0" }
@@ -353,17 +355,17 @@ export function useSessionEscrow() {
         isDepositing: isDepositing || isWaitingDeposit,
         isWithdrawing: isWithdrawing || isWaitingWithdraw,
         isOpeningSession: isOpeningSession || isWaitingSession,
-        
+
         // Success
         isApproveSuccess,
         isDepositSuccess,
         isWithdrawSuccess,
         isSessionOpenSuccess,
-        
+
         // Hashes
         depositHash,
         sessionHash,
-        
+
         refetch
     }
 }

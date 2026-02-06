@@ -121,6 +121,19 @@ export async function getActiveMarkets(): Promise<MarketRow[]> {
     return data ?? [];
 }
 
+export async function getMarketsByResolver(resolverAddress: string): Promise<MarketRow[]> {
+    const supabase = getSupabase();
+
+    const { data, error } = await supabase
+        .from('markets')
+        .select('*')
+        .ilike('resolver_address', resolverAddress)
+        .order('created_at', { ascending: false });
+
+    if (error) throw new Error(`Failed to get markets by resolver: ${error.message}`);
+    return data ?? [];
+}
+
 export async function updateMarketReserves(
     marketId: string,
     yesReserves: bigint,
@@ -276,6 +289,34 @@ export async function updateSessionBalance(
     if (error) throw new Error(`Failed to update session: ${error.message}`);
 }
 
+export async function upsertSession(
+    sessionId: string,
+    userAddress: string,
+    collateral: bigint,
+    rateBps: number,
+    safeMode: boolean
+): Promise<void> {
+    const supabase = getSupabase();
+
+    const { error } = await supabase
+        .from('sessions')
+        .upsert({
+            session_id: sessionId,
+            user_address: userAddress,
+            initial_collateral: collateral.toString(),
+            current_balance: collateral.toString(), // Estimate
+            rwa_rate_bps: rateBps,
+            safe_mode_enabled: safeMode,
+            status: 'OPEN',
+            latest_signature: 'init',
+            nonce: 0
+        }, {
+            onConflict: 'session_id'
+        });
+
+    if (error) throw new Error(`Failed to upsert session: ${error.message}`);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // POSITION OPERATIONS
 // ═══════════════════════════════════════════════════════════════════════════
@@ -325,6 +366,36 @@ export async function getMarketPositions(marketId: string): Promise<PositionRow[
 }
 
 /**
+ * Get positions only from ACTIVE markets (not resolved/cancelled)
+ * Used for calculating locked balance — resolved positions shouldn't count as locked
+ */
+export async function getUserActivePositions(userId: string): Promise<(PositionRow & { market_status: string })[]> {
+    const supabase = getSupabase();
+
+    const { data, error } = await supabase
+        .from('positions')
+        .select('*, markets!inner(status)')
+        .eq('user_id', userId)
+        .gt('shares', '0');
+
+    if (error) throw new Error(`Failed to get active positions: ${error.message}`);
+
+    // Filter to only ACTIVE markets and flatten
+    return (data ?? [])
+        .filter((row: any) => row.markets?.status === 'ACTIVE')
+        .map((row: any) => ({
+            id: row.id,
+            user_id: row.user_id,
+            market_id: row.market_id,
+            outcome: row.outcome,
+            shares: row.shares,
+            average_entry_price: row.average_entry_price,
+            created_at: row.created_at,
+            market_status: row.markets?.status || 'ACTIVE'
+        }));
+}
+
+/**
  * Ensure a session exists in the database (auto-create if not)
  * This allows using on-chain sessionIds without explicit session registration
  * The positions table has FK to sessions.session_id, so we need sessions not users
@@ -341,12 +412,17 @@ export async function ensureSessionExists(sessionId: string, userAddress?: strin
 
     if (existing) return; // Session exists
 
-    // Auto-create session for betting
+    // Auto-create session for betting - require userAddress to avoid storing invalid data
+    if (!userAddress) {
+        console.warn(`[AMM] Cannot auto-create session ${sessionId}: userAddress is required`);
+        return; // Skip auto-creation without proper userAddress
+    }
+
     const { error } = await supabase
         .from('sessions')
         .insert({
             session_id: sessionId,
-            user_address: userAddress || sessionId, // Use sessionId as fallback
+            user_address: userAddress,
             status: 'OPEN',
             initial_collateral: '0',
             current_balance: '0',
@@ -359,6 +435,23 @@ export async function ensureSessionExists(sessionId: string, userAddress?: strin
     } else {
         console.log(`[AMM] Auto-created session: ${sessionId}`);
     }
+}
+
+/**
+ * Get the user_address for a given session
+ */
+export async function getSessionUserAddress(sessionId: string): Promise<string | null> {
+    const supabase = getSupabase();
+
+    const { data, error } = await supabase
+        .from('sessions')
+        .select('user_address')
+        .eq('session_id', sessionId)
+        .single();
+
+    if (error?.code === 'PGRST116') return null;
+    if (error) return null;
+    return data?.user_address ?? null;
 }
 
 export async function upsertPosition(
@@ -389,6 +482,103 @@ export async function upsertPosition(
 
     if (error) throw new Error(`Failed to upsert position: ${error.message}`);
     return data;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TRADE OPERATIONS (PnL Tracking)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface TradeRow {
+    id: string;
+    session_id: string;
+    user_address: string;
+    market_id: string;
+    trade_type: 'BUY' | 'SELL' | 'CLAIM';
+    outcome: 'YES' | 'NO';
+    shares: string;
+    price: number;
+    cost_basis: string;
+    realized_pnl: string;
+    market_title: string | null;
+    created_at: string;
+}
+
+export interface InsertTradeInput {
+    sessionId: string;
+    userAddress: string;
+    marketId: string;
+    tradeType: 'BUY' | 'SELL' | 'CLAIM';
+    outcome: Outcome;
+    shares: bigint;
+    price: number;
+    costBasis: bigint;
+    realizedPnl: bigint;
+    marketTitle?: string;
+}
+
+export async function insertTrade(input: InsertTradeInput): Promise<TradeRow> {
+    const supabase = getSupabase();
+
+    const { data, error } = await supabase
+        .from('trades')
+        .insert({
+            session_id: input.sessionId,
+            user_address: input.userAddress,
+            market_id: input.marketId,
+            trade_type: input.tradeType,
+            outcome: input.outcome === Outcome.YES ? 'YES' : 'NO',
+            shares: input.shares.toString(),
+            price: input.price,
+            cost_basis: input.costBasis.toString(),
+            realized_pnl: input.realizedPnl.toString(),
+            market_title: input.marketTitle ?? null
+        })
+        .select()
+        .single();
+
+    if (error) throw new Error(`Failed to insert trade: ${error.message}`);
+    return data;
+}
+
+export async function getTradesByUser(userAddress: string): Promise<TradeRow[]> {
+    const supabase = getSupabase();
+
+    const { data, error } = await supabase
+        .from('trades')
+        .select('*')
+        .ilike('user_address', userAddress)
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+    if (error) throw new Error(`Failed to get user trades: ${error.message}`);
+    return data ?? [];
+}
+
+export async function getTradesBySession(sessionId: string): Promise<TradeRow[]> {
+    const supabase = getSupabase();
+
+    const { data, error } = await supabase
+        .from('trades')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('created_at', { ascending: false });
+
+    if (error) throw new Error(`Failed to get session trades: ${error.message}`);
+    return data ?? [];
+}
+
+export async function getTradesByMarketAndUser(marketId: string, userAddress: string): Promise<TradeRow[]> {
+    const supabase = getSupabase();
+
+    const { data, error } = await supabase
+        .from('trades')
+        .select('*')
+        .eq('market_id', marketId)
+        .ilike('user_address', userAddress)
+        .order('created_at', { ascending: false });
+
+    if (error) throw new Error(`Failed to get market trades: ${error.message}`);
+    return data ?? [];
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

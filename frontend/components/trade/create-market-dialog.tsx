@@ -5,6 +5,7 @@ import { Plus, X, Loader2, CheckCircle, Calendar } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCreateMarket } from "@/hooks/use-amm"
 import { parseUSDCInput } from "@/lib/amm-types"
+import { useAccount } from "wagmi"
 
 interface CreateMarketDialogProps {
     isOpen: boolean
@@ -46,6 +47,7 @@ export function CreateMarketDialog({ isOpen, onClose }: CreateMarketDialogProps)
     const [success, setSuccess] = useState(false)
 
     const createMarket = useCreateMarket()
+    const { address } = useAccount()
 
     // Get minimum date (tomorrow)
     const getMinDate = () => {
@@ -80,7 +82,8 @@ export function CreateMarketDialog({ isOpen, onClose }: CreateMarketDialogProps)
                     condition: oracleCondition,
                     targetPrice: parseFloat(oracleTarget)
                 } : undefined,
-                resolverAddress: resolutionType === 'manual' ? resolverAddress || undefined : undefined
+                // Use explicit resolver address if provided, otherwise default to connected wallet
+                resolverAddress: resolutionType === 'manual' ? (resolverAddress || address || undefined) : undefined
             })
 
             setSuccess(true)

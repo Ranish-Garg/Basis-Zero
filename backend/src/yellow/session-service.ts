@@ -21,7 +21,8 @@ import {
 import { privateKeyToAccount } from 'viem/accounts';
 import { createWalletClient, createPublicClient, http, type Address, type Hex, keccak256, encodePacked, toHex } from 'viem';
 import { polygonAmoy } from 'viem/chains';
-import { poolManager, Outcome } from '../amm';
+import { persistentPoolManager, Outcome } from '../amm';
+import * as ammRepository from '../db/amm-repository';
 import { SESSION_ESCROW_ADDRESS, SESSION_ESCROW_ABI } from './contracts';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -67,7 +68,7 @@ export class YellowSessionService {
   constructor() {
     this.router = Router();
     this.setupRoutes();
-    
+
     // Auto-initialize if env var set (use PRIVATE_KEY from .env)
     const pk = process.env.BACKEND_PRIVATE_KEY || process.env.PRIVATE_KEY;
     if (pk) {
@@ -92,11 +93,11 @@ export class YellowSessionService {
     this.router.post('/open', async (req, res) => {
       try {
         const { userAddress, sessionId, collateral, safeModeEnabled, rwaRateBps } = req.body;
-        
+
         if (!sessionId || !userAddress) {
           return res.status(400).json({ error: 'sessionId and userAddress required' });
         }
-        
+
         const session = await this.openSession(
           userAddress as Address,
           sessionId as Hex,
@@ -108,6 +109,7 @@ export class YellowSessionService {
         );
         res.json({ success: true, session: this.serializeSession(session) });
       } catch (error) {
+        console.error('[Session Open] Error:', error);
         res.status(500).json({ error: String(error) });
       }
     });
@@ -136,14 +138,14 @@ export class YellowSessionService {
     this.router.post('/close', async (req, res) => {
       try {
         const { sessionId } = req.body;
-        
+
         if (!sessionId) {
           return res.status(400).json({ error: 'sessionId required' });
         }
-        
+
         const result = await this.closeSession(sessionId as Hex);
-        res.json({ 
-          success: result.success, 
+        res.json({
+          success: result.success,
           pnl: result.pnl.toString(),
           signature: result.signature,
           sessionId: result.sessionId
@@ -158,11 +160,11 @@ export class YellowSessionService {
     this.router.post('/recover', async (req, res) => {
       try {
         const { userAddress, sessionId, collateral, safeModeEnabled } = req.body;
-        
+
         if (!sessionId || !userAddress) {
           return res.status(400).json({ error: 'sessionId and userAddress required' });
         }
-        
+
         // Re-register the session
         const session = await this.openSession(
           userAddress as Address,
@@ -171,7 +173,7 @@ export class YellowSessionService {
           safeModeEnabled ?? true,
           520000 // Demo rate
         );
-        
+
         console.log(`🟡 Session recovered: ${sessionId}`);
         res.json({ success: true, session: this.serializeSession(session), recovered: true });
       } catch (error) {
@@ -197,14 +199,14 @@ export class YellowSessionService {
     this.router.get('/user/:address', (req, res) => {
       const userAddress = req.params.address.toLowerCase() as Address;
       const sessionId = this.userSessions.get(userAddress);
-      
+
       if (!sessionId) {
         return res.json({ session: null });
       }
-      
+
       const session = this.sessions.get(sessionId);
       const bets = this.sessionBets.get(sessionId) || [];
-      
+
       res.json({
         session: session ? this.serializeSession(session) : null,
         bets: bets.map(b => this.serializeBet(b)),
@@ -212,21 +214,27 @@ export class YellowSessionService {
     });
 
     // Get streaming balance (yield calculation)
-    this.router.get('/:sessionId/balance', (req, res) => {
-      const sessionId = req.params.sessionId as Hex;
-      const { safeMode } = req.query;
-      
-      const balance = this.getStreamingBalance(
-        sessionId,
-        safeMode === 'true'
-      );
-      
-      res.json({
-        principal: balance.principal.toString(),
-        yield: balance.yield.toString(),
-        openBets: balance.openBets.toString(),
-        available: balance.available.toString(),
-      });
+    this.router.get('/:sessionId/balance', async (req, res) => {
+      try {
+        const sessionId = req.params.sessionId as Hex;
+        const { safeMode } = req.query;
+
+        const balance = await this.getStreamingBalance(
+          sessionId,
+          safeMode === 'true'
+        );
+
+        res.json({
+          principal: balance.principal.toString(),
+          yield: balance.yield.toString(),
+          openBets: balance.openBets.toString(),
+          available: balance.available.toString(),
+          locked: balance.openBets.toString() // Alias for clarity
+        });
+      } catch (error) {
+        console.error('[Session Balance] Error:', error);
+        res.status(500).json({ error: String(error) });
+      }
     });
   }
 
@@ -270,75 +278,75 @@ export class YellowSessionService {
     rwaRateBps: number
   ): Promise<SessionConfig> {
     const normalizedUser = userAddress.toLowerCase() as Address;
-    
+
     console.log(`🟡 Opening Session for ${userAddress}`);
     console.log(`   Session ID: ${sessionId}`);
-    
+
     // FETCH ON-CHAIN DATA (Source of Truth)
-    const publicClient = createPublicClient({ 
-      chain: polygonAmoy, 
-      transport: http(process.env.POLYGON_AMOY_RPC_URL) 
+    const publicClient = createPublicClient({
+      chain: polygonAmoy,
+      transport: http(process.env.POLYGON_AMOY_RPC_URL)
     });
 
     let onChainRate = BigInt(rwaRateBps); // Default fallback
     let initialYield = BigInt(0);
 
     try {
-        console.log(`🔌 Syncing with Contract: ${SESSION_ESCROW_ADDRESS}`);
-        
-        // 1. Get Yield Rate
-        const rateBps = await publicClient.readContract({
-            address: SESSION_ESCROW_ADDRESS,
-            abi: SESSION_ESCROW_ABI,
-            functionName: 'yieldRateBps'
-        });
-        onChainRate = BigInt(rateBps);
-        console.log(`   On-Chain Yield Rate: ${onChainRate} bps`);
+      console.log(`🔌 Syncing with Contract: ${SESSION_ESCROW_ADDRESS}`);
 
-        // 2. Get Initial Accrued Yield
-        const info = await publicClient.readContract({
-            address: SESSION_ESCROW_ADDRESS,
-            abi: SESSION_ESCROW_ABI,
-            functionName: 'getAccountInfo',
-            args: [userAddress]
-        });
-        // info struct: { principal, yield, locked, activeSessionId, state }
-        // Note: viem returns array or object depending on calling convention? 
-        // Based on ABI outputs with names, viem returns object or array of values. 
-        // ABI has named outputs, so checks types.
-        // Assuming viem returns object-like or I access by index if array.
-        // Usually returns object if names present? Let's check viem behavior: 
-        // ABI defined with names -> returns object if multicall/readContract support it?
-        // Actually, with simple ABI readContract returns result matching structure.
-        // Let's assume property access works or use 'any'.
-        // Safe bet: use (info as any).yield or similar.
-        // BUT wait, in my ABI `accounts` returned struct, `getAccountInfo` returned tuple with names.
-        // `viem` usually returns array/tuple for multiple return values unless mapped.
-        // Let's assume array for safety: [principal, yield, locked, ...]
-        
-        // Checking my ABI: getAccountInfo outputs multiple values (tuple), not struct.
-        // So return value is array: [principal, yield, locked, activeSessionId, state]
-        
-        // Wait, 'info' type? in TS 'readContract' infers type.
-        // Because ABI is 'const', TS knows.
-        // However, I need to be sure. I'll treat it as array.
-        // Wait, 'getAccountInfo' returns multiple values.
-        
-        // If I use the updated ABI, I see output names.
-        // Just in case, I'll log it.
-        const infoResult: any = info; 
-        // Assuming array-like access
-        if (infoResult && typeof infoResult[1] !== 'undefined') {
-             initialYield = infoResult[1];
-        } else if (infoResult && infoResult.yield) {
-             initialYield = infoResult.yield;
-        }
-        
-        console.log(`   Initial Accrued Yield: ${initialYield}`);
+      // 1. Get Yield Rate
+      const rateBps = await publicClient.readContract({
+        address: SESSION_ESCROW_ADDRESS,
+        abi: SESSION_ESCROW_ABI,
+        functionName: 'yieldRateBps'
+      });
+      onChainRate = BigInt(rateBps);
+      console.log(`   On-Chain Yield Rate: ${onChainRate} bps`);
+
+      // 2. Get Initial Accrued Yield
+      const info = await publicClient.readContract({
+        address: SESSION_ESCROW_ADDRESS,
+        abi: SESSION_ESCROW_ABI,
+        functionName: 'getAccountInfo',
+        args: [userAddress]
+      });
+      // info struct: { principal, yield, locked, activeSessionId, state }
+      // Note: viem returns array or object depending on calling convention? 
+      // Based on ABI outputs with names, viem returns object or array of values. 
+      // ABI has named outputs, so checks types.
+      // Assuming viem returns object-like or I access by index if array.
+      // Usually returns object if names present? Let's check viem behavior: 
+      // ABI defined with names -> returns object if multicall/readContract support it?
+      // Actually, with simple ABI readContract returns result matching structure.
+      // Let's assume property access works or use 'any'.
+      // Safe bet: use (info as any).yield or similar.
+      // BUT wait, in my ABI `accounts` returned struct, `getAccountInfo` returned tuple with names.
+      // `viem` usually returns array/tuple for multiple return values unless mapped.
+      // Let's assume array for safety: [principal, yield, locked, ...]
+
+      // Checking my ABI: getAccountInfo outputs multiple values (tuple), not struct.
+      // So return value is array: [principal, yield, locked, activeSessionId, state]
+
+      // Wait, 'info' type? in TS 'readContract' infers type.
+      // Because ABI is 'const', TS knows.
+      // However, I need to be sure. I'll treat it as array.
+      // Wait, 'getAccountInfo' returns multiple values.
+
+      // If I use the updated ABI, I see output names.
+      // Just in case, I'll log it.
+      const infoResult: any = info;
+      // Assuming array-like access
+      if (infoResult && typeof infoResult[1] !== 'undefined') {
+        initialYield = infoResult[1];
+      } else if (infoResult && infoResult.yield) {
+        initialYield = infoResult.yield;
+      }
+
+      console.log(`   Initial Accrued Yield: ${initialYield}`);
 
     } catch (error) {
-        console.error("⚠️ Failed to sync with contract:", error);
-        // Fallback to 0 initial yield and provided rate
+      console.error("⚠️ Failed to sync with contract:", error);
+      // Fallback to 0 initial yield and provided rate
     }
 
     console.log(`   Collateral: ${collateral}`);
@@ -351,13 +359,22 @@ export class YellowSessionService {
       rwaRateBps: Number(onChainRate),
       initialYield: initialYield,
       safeModeEnabled, // Should probably enforce strict mode here if contract says so? 
-                       // Currently user requested "Allow betting full locked amount".
-                       // Safe Mode boolean in backend is "Bet Only Yield". 
-                       // Full Mode is "Bet Principal + Yield".
-                       // This flag comes from frontend request?
+      // Currently user requested "Allow betting full locked amount".
+      // Safe Mode boolean in backend is "Bet Only Yield". 
+      // Full Mode is "Bet Principal + Yield".
+      // This flag comes from frontend request?
       createdAt: Date.now(),
       status: 'active',
     };
+
+    // Persist session to DB
+    await ammRepository.upsertSession(
+      sessionId,
+      normalizedUser,
+      collateral,
+      Number(onChainRate),
+      safeModeEnabled
+    );
 
     this.sessions.set(sessionId, session);
     this.sessionBets.set(sessionId, []);
@@ -385,24 +402,27 @@ export class YellowSessionService {
       throw new Error('Session not active');
     }
 
-    // Calculate available balance
-    const balance = this.getStreamingBalance(sessionId, session.safeModeEnabled);
+    // Calculate available balance (ASYNC now)
+    const balance = await this.getStreamingBalance(sessionId, session.safeModeEnabled);
+
+    // Check if user has enough AVAILABLE balance (Collateral + Yield - Locked)
     if (amount > balance.available) {
-      throw new Error(`Insufficient balance. Available: ${balance.available}, Requested: ${amount}`);
+      throw new Error(`Insufficient balance. Available: ${Number(balance.available) / 1e6} USDC, Requested: ${Number(amount) / 1e6} USDC`);
     }
 
     // Convert side to AMM Outcome
     const outcome = side === 'YES' ? Outcome.YES : Outcome.NO;
 
-    // Execute bet against AMM Pool
-    const result = poolManager.placeBet(
+    // Execute bet against PERSISTENT AMM Pool
+    // This will update the 'positions' table in DB
+    const result = await persistentPoolManager.placeBet(
       marketId,
-      session.user,
+      sessionId, // Use sessionId as userId for DB positions
       amount,
       outcome
     );
 
-    // Create bet record
+    // Create bet record (In-memory for session history, though DB has it too)
     const bet: Bet = {
       id: `bet_${Date.now()}`,
       sessionId,
@@ -414,13 +434,13 @@ export class YellowSessionService {
       resolved: false,
     };
 
-    // Add to session bets
+    // Add to session bets (In-memory cache)
     const bets = this.sessionBets.get(sessionId) || [];
     bets.push(bet);
     this.sessionBets.set(sessionId, bets);
 
     // Recalculate available balance
-    const newBalance = this.getStreamingBalance(sessionId, session.safeModeEnabled);
+    const newBalance = await this.getStreamingBalance(sessionId, session.safeModeEnabled);
 
     console.log(`🟡 Bet Placed: ${marketId} | ${side} | ${Number(amount) / 1e6} USDC @ ${result.effectivePrice.toFixed(4)}`);
 
@@ -485,13 +505,13 @@ export class YellowSessionService {
     const messageHash = keccak256(
       encodePacked(['bytes32', 'int256'], [sessionId, pnl])
     );
-    
+
     // Sign with private key
     const account = privateKeyToAccount(this.privateKey);
     const signature = await account.signMessage({ message: { raw: messageHash } });
 
     session.status = 'closed';
-    
+
     // Clean up user mapping
     this.userSessions.delete(session.user);
 
@@ -499,8 +519,8 @@ export class YellowSessionService {
     console.log(`   PnL: ${Number(pnl) / 1e6} USDC`);
     console.log(`   Signature generated for contract settlement`);
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       pnl,
       signature,
       sessionId
@@ -508,23 +528,43 @@ export class YellowSessionService {
   }
 
   /**
-   * Get streaming balance with yield calculation
+   * Get streaming balance with yield calculation and Locked PnL
    */
-  getStreamingBalance(
+  async getStreamingBalance(
     sessionId: Hex,
     safeMode: boolean
-  ): { principal: bigint; yield: bigint; openBets: bigint; available: bigint } {
-    const session = this.sessions.get(sessionId);
+  ): Promise<{ principal: bigint; yield: bigint; openBets: bigint; available: bigint }> {
+    let session = this.sessions.get(sessionId);
+
+    // Lazy hydration from DB if missing (e.g. after restart)
+    if (!session) {
+      try {
+        const row = await ammRepository.getSession(sessionId);
+        if (row) {
+          session = {
+            sessionId: row.session_id as Hex,
+            user: row.user_address as Address,
+            collateral: BigInt(row.initial_collateral),
+            rwaRateBps: (row as any).rwa_rate_bps || 520,
+            initialYield: BigInt(0),
+            safeModeEnabled: (row as any).safe_mode_enabled ?? true,
+            createdAt: new Date(row.created_at).getTime(),
+            status: row.status === 'OPEN' ? 'active' : 'closed' as any
+          };
+          this.sessions.set(sessionId, session);
+          this.userSessions.set(session.user, sessionId);
+          console.log(`[Session Balance] Hydrated session ${sessionId} from DB`);
+        }
+      } catch (err) {
+        console.error(`[Session Balance] Failed to hydrate session ${sessionId}`, err);
+      }
+    }
+
     if (!session) {
       return { principal: BigInt(0), yield: BigInt(0), openBets: BigInt(0), available: BigInt(0) };
     }
 
-    const bets = this.sessionBets.get(sessionId) || [];
-    const openBets = bets
-      .filter((b) => !b.resolved)
-      .reduce((sum, b) => sum + b.amount, BigInt(0));
-
-    // Calculate accrued yield
+    // 1. Calculate Accrued Yield
     const elapsedMs = Date.now() - session.createdAt;
     const elapsedSeconds = elapsedMs / 1000;
     const secondsPerYear = 365 * 24 * 60 * 60;
@@ -533,22 +573,51 @@ export class YellowSessionService {
     const newYieldSinceSessionStart =
       (session.collateral * BigInt(session.rwaRateBps) * BigInt(Math.floor(elapsedSeconds))) /
       BigInt(Math.floor(secondsPerYear * 10000));
-      
+
     // Total Yield = Initial (Synced) + New (Local)
     const yieldAmount = (session.initialYield || BigInt(0)) + newYieldSinceSessionStart;
 
-    let available: bigint;
-    
-    // User Update: Allow betting full locked amount + yield in ALL modes (Safe Mode limit removed)
-    // Full Mode & Safe Mode: principal + yield - openBets
-    const total = session.collateral + yieldAmount;
-    available = total > openBets ? total - openBets : BigInt(0);
 
+    // 2. Calculate Locked Amount (Used for bets)
+    // We must query the DB positions for this user (sessionId) to see what is currently locked in open positions
+    // Locked = Sum(Shares * AvgEntryPrice) for all open positions
+    let openBetsLocked = BigInt(0);
+
+    try {
+      const positions = await ammRepository.getUserPositions(sessionId);
+
+      for (const pos of positions) {
+        // shares is string in DB, average_entry_price is number
+        const sharesProps = BigInt(pos.shares);
+        if (sharesProps > 0n) {
+          // Cost Basis = Shares * AvgPrice
+          // Note: Shares are in 6 decimals (USDC). Price is ratio 0-1.
+          // So Cost = Shares * Price
+          const cost = Number(sharesProps) * pos.average_entry_price;
+          openBetsLocked += BigInt(Math.floor(cost));
+        }
+      }
+    } catch (err) {
+      console.error(`[Session Balance] Failed to fetch DB positions for ${sessionId}`, err);
+      // Fallback to in-memory if DB fails (though this might be out of sync)
+      const bets = this.sessionBets.get(sessionId) || [];
+      openBetsLocked = bets
+        .filter((b) => !b.resolved)
+        .reduce((sum, b) => sum + b.amount, BigInt(0));
+    }
+
+
+    // 3. Calculate Available
+    // Available = (Principal + Yield) - Locked
+    const totalLiquidity = session.collateral + yieldAmount;
+    let available = totalLiquidity - openBetsLocked;
+
+    if (available < 0n) available = BigInt(0);
 
     return {
       principal: session.collateral,
       yield: yieldAmount,
-      openBets,
+      openBets: openBetsLocked,
       available,
     };
   }

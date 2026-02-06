@@ -33,6 +33,7 @@ export interface MarketWithMetadata {
     resolutionValue: 'YES' | 'NO' | null;
     resolutionType: 'manual' | 'oracle' | null;
     oracleConfig: Record<string, unknown> | null;
+    resolverAddress: string | null;
     yesReserves: string;
     noReserves: string;
     kInvariant: string;
@@ -87,6 +88,7 @@ export async function createMarketDB(input: CreateMarketInput): Promise<MarketWi
         resolutionValue: row.resolution_value,
         resolutionType: row.resolution_type,
         oracleConfig: row.oracle_config as Record<string, unknown>,
+        resolverAddress: row.resolver_address,
         yesReserves: row.yes_reserves,
         noReserves: row.no_reserves,
         kInvariant: row.k_invariant,
@@ -123,6 +125,7 @@ export async function getActiveMarketsDB(): Promise<MarketWithMetadata[]> {
             resolutionValue: row.resolution_value,
             resolutionType: row.resolution_type,
             oracleConfig: row.oracle_config as Record<string, unknown>,
+            resolverAddress: row.resolver_address,
             yesReserves: row.yes_reserves,
             noReserves: row.no_reserves,
             kInvariant: row.k_invariant,
@@ -160,6 +163,7 @@ export async function getMarketDB(marketId: string): Promise<MarketWithMetadata 
         resolutionValue: row.resolution_value,
         resolutionType: row.resolution_type,
         oracleConfig: row.oracle_config as Record<string, unknown>,
+        resolverAddress: row.resolver_address,
         yesReserves: row.yes_reserves,
         noReserves: row.no_reserves,
         kInvariant: row.k_invariant,
