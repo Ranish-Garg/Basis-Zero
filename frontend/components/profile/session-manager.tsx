@@ -23,6 +23,7 @@ export function SessionManager() {
         locked, 
         activeSessionId: sessionId, 
         closeSession,
+        recoverSession,
         refetch 
     } = useSessionEscrow()
     
@@ -124,6 +125,33 @@ export function SessionManager() {
             functionName: "timeoutRelease",
             args: [sessionId]
         })
+    }
+
+    // Recover session logic
+    const handleRecoverSession = async () => {
+        if (!sessionId) return
+        
+        setIsClosingViaBackend(true) // Reuse loading state
+        setCloseError(null)
+        setCloseSuccess(false)
+        
+        try {
+            const result = await recoverSession?.() // Optional call
+            if (result && result.recovered) {
+                setCloseSuccess(true) // Show success message (customized below)
+                // Just close modal after short delay or let user see success
+                setTimeout(() => {
+                    setShowCloseModal(false)
+                    setCloseSuccess(false)
+                    refetch()
+                }, 2000)
+            }
+        } catch (error) {
+            console.error('Recover session error:', error)
+            setCloseError(error instanceof Error ? error.message : 'Failed to recover session')
+        } finally {
+            setIsClosingViaBackend(false)
+        }
     }
 
     const isProcessing = isCancelling || isWaitingCancel || isClosingViaBackend || isSettling || isWaitingSettle
@@ -350,8 +378,17 @@ export function SessionManager() {
                             
                             {/* Emergency Release */}
                             {!closeSuccess && (
-                                <div className="border-t border-border/50 pt-4 mt-4">
+                                <div className="border-t border-border/50 pt-4 mt-4 space-y-2">
                                     <p className="text-xs text-muted-foreground mb-2">Emergency Options:</p>
+                                    
+                                    <button 
+                                        onClick={handleRecoverSession}
+                                        disabled={isProcessing}
+                                        className="w-full py-2 rounded-lg font-mono text-xs border border-blue-500/20 text-blue-500 hover:bg-blue-500/10 transition-colors"
+                                    >
+                                        Recover Session (If Backend Sync Issues)
+                                    </button>
+
                                     <button 
                                         onClick={handleTimeoutRelease}
                                         disabled={isProcessing}
@@ -362,6 +399,8 @@ export function SessionManager() {
                                 </div>
                             )}
                         </div>
+
+
 
                         <button 
                             onClick={() => {

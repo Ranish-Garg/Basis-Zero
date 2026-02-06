@@ -1,7 +1,7 @@
 import { type Address } from "viem"
 
 // Polygon Amoy contracts
-export const SESSION_ESCROW_ADDRESS = "0x49E4177eA6F21Cc5673bDc0b09507C5648fd53a3" as Address
+export const SESSION_ESCROW_ADDRESS = "0x93dDbF1AD4c734F7495696dd6A0967E7f6b4bf34" as Address
 export const POLYGON_USDC_ADDRESS = "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582" as Address
 
 export const ERC20_ABI = [

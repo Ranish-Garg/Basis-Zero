@@ -140,7 +140,7 @@ export function DepositWidget() {
                     Vault Deposit
                 </h3>
                 <div className="px-2 py-1 rounded bg-secondary/50 text-xs font-mono">
-                    APY: ~5.2%
+                    DEMO APY: ~5200%
                 </div>
             </div>
 

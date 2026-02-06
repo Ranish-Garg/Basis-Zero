@@ -32,8 +32,8 @@ export function StreamingBalance() {
         fetchStreamingBalance,
     } = useSessionEscrow()
     
-    // Simulate/Hardcode APY for demo
-    const apyPercent = "5.2"
+    // DEMO MODE: Boosted APY for testing (5200% = 100x normal)
+    const apyPercent = "5200"
     const hasActiveSession = sessionState === SessionState.Active
 
     // Fetch streaming balance (yield) from backend when session is active

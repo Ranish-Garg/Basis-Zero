@@ -66,9 +66,11 @@ export class YellowSessionService {
     this.router = Router();
     this.setupRoutes();
     
-    // Auto-initialize if env var set
-    if (process.env.BACKEND_PRIVATE_KEY) {
-      this.initialize(process.env.BACKEND_PRIVATE_KEY as Hex);
+    // Auto-initialize if env var set (use PRIVATE_KEY from .env)
+    const pk = process.env.BACKEND_PRIVATE_KEY || process.env.PRIVATE_KEY;
+    if (pk) {
+      this.initialize(pk as Hex);
+      console.log('🟡 Yellow Session Service auto-initialized from env');
     }
   }
 
@@ -98,7 +100,9 @@ export class YellowSessionService {
           sessionId as Hex,
           BigInt(collateral || '0'),
           safeModeEnabled ?? true,
-          rwaRateBps ?? 520
+          // DEMO MODE: 520000 bps = 5200% APY (100x boost for testing)
+          // Production would use 520 (5.2% APY)
+          rwaRateBps ?? 520000
         );
         res.json({ success: true, session: this.serializeSession(session) });
       } catch (error) {
@@ -142,6 +146,32 @@ export class YellowSessionService {
           signature: result.signature,
           sessionId: result.sessionId
         });
+      } catch (error) {
+        res.status(500).json({ error: String(error) });
+      }
+    });
+
+    // Recover/re-register an existing on-chain session with backend
+    // Use this after backend restart when session is still active on-chain
+    this.router.post('/recover', async (req, res) => {
+      try {
+        const { userAddress, sessionId, collateral, safeModeEnabled } = req.body;
+        
+        if (!sessionId || !userAddress) {
+          return res.status(400).json({ error: 'sessionId and userAddress required' });
+        }
+        
+        // Re-register the session
+        const session = await this.openSession(
+          userAddress as Address,
+          sessionId as Hex,
+          BigInt(collateral || '0'),
+          safeModeEnabled ?? true,
+          520000 // Demo rate
+        );
+        
+        console.log(`🟡 Session recovered: ${sessionId}`);
+        res.json({ success: true, session: this.serializeSession(session), recovered: true });
       } catch (error) {
         res.status(500).json({ error: String(error) });
       }

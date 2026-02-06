@@ -169,7 +169,7 @@ export function SessionStartWidget() {
                         </span>
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">
-                        Earning ~5.2% APY
+                        DEMO: Earning ~5200% APY
                     </div>
                 </div>
 

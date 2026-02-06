@@ -183,7 +183,8 @@ export function useSessionEscrow() {
                     sessionId: sessionId,
                     collateral: collateralBig,
                     safeModeEnabled: safeMode,
-                    rwaRateBps: 520 // 5.2% APY
+                    // DEMO: 520000 = 5200% APY (100x boost for testing)
+                    rwaRateBps: 520000
                 })
             })
             
@@ -226,6 +227,47 @@ export function useSessionEscrow() {
             throw error
         }
     }, [parsedAccount?.activeSessionId])
+
+    // Recover session with backend (for when backend restarts but session is active on-chain)
+    const recoverSession = useCallback(async () => {
+        const sessionId = parsedAccount?.activeSessionId
+        const locked = parsedAccount?.locked
+        
+        if (!sessionId || !address || !locked) return null
+        
+        try {
+            const collateralBig = parseUnits(locked, 6).toString()
+            
+            const response = await fetch(`${BACKEND_URL}/api/session/recover`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    userAddress: address,
+                    sessionId: sessionId,
+                    collateral: collateralBig,
+                    safeModeEnabled: true // Default to safe mode for recovery
+                })
+            })
+
+            
+            if (!response.ok) {
+                // Try to parse JSON, fallback to text if HTML returned (404/500)
+                try {
+                    const error = await response.json()
+                    throw new Error(error.error || "Failed to recover session")
+                } catch (e) {
+                    const text = await response.text()
+                    console.error("Backend error response (non-JSON):", text.slice(0, 200)) // Log first 200 chars
+                    throw new Error(`Backend error (${response.status}): ${response.statusText}`)
+                }
+            }
+            return await response.json()
+        } catch (error) {
+            console.error("Recover session error:", error)
+            throw error
+        }
+    }, [parsedAccount?.activeSessionId, parsedAccount?.locked, address])
+
 
     // Get streaming balance from backend
     const fetchStreamingBalance = useCallback(async (safeMode: boolean = true) => {
@@ -275,6 +317,7 @@ export function useSessionEscrow() {
         startSession,
         notifyBackendSessionStart,
         closeSession,
+        recoverSession,
         fetchStreamingBalance,
 
         // States
