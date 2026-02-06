@@ -165,11 +165,14 @@ export function MarketGrid({
             {/* Market Cards Grid */}
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
                 {filteredMarkets.map((market, index) => (
-                    <button
+                    <div
                         key={market.marketId}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => onMarketSelect?.(market.marketId)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onMarketSelect?.(market.marketId); } }}
                         className={cn(
-                            "group relative overflow-hidden rounded-xl border border-border/60 bg-card/40 p-5 glass transition-all duration-400 text-left active:scale-[0.99] hover-lift hover:border-primary/40 hover:bg-card/70 animate-fade-in-up",
+                            "group relative overflow-hidden rounded-xl border border-border/60 bg-card/40 p-5 glass transition-all duration-400 text-left active:scale-[0.99] hover-lift hover:border-primary/40 hover:bg-card/70 animate-fade-in-up cursor-pointer",
                         )}
                         style={{ animationDelay: `${index * 50}ms` }}
                     >
@@ -198,7 +201,7 @@ export function MarketGrid({
                         </div>
 
                         {/* Title */}
-                        <h4 className="font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors mb-2 line-clamp-2 break-words">
+                        <h4 className="font-semibold tracking-tight text-foreground group-hover:text-primary transition-colors mb-2 line-clamp-2 warp-break-word">
                             {market.title}
                         </h4>
 
@@ -250,7 +253,7 @@ export function MarketGrid({
 
                         {/* Bottom accent */}
                         <div className="absolute bottom-0 left-0 h-1 w-0 bg-linear-to-r from-primary via-primary/80 to-transparent transition-all duration-500 group-hover:w-full" />
-                    </button>
+                    </div>
                 ))}
             </div>
 

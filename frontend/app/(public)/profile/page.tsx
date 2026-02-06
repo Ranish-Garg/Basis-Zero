@@ -1,5 +1,6 @@
 import { SessionManager } from "@/components/profile/session-manager"
 import { TradingHistory } from "@/components/profile/trading-history"
+import { MyMarkets } from "@/components/profile/my-markets"
 import type { Metadata } from "next"
 
 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://basiszero.io'
@@ -35,9 +36,10 @@ export default function ProfilePage() {
 
                 {/* Main Grid Layout */}
                 <div className="grid gap-6 lg:grid-cols-12">
-                    {/* Left Column - Session Manager */}
-                    <div className="lg:col-span-5">
+                    {/* Left Column - Session Manager & My Markets */}
+                    <div className="lg:col-span-5 space-y-6">
                         <SessionManager />
+                        <MyMarkets />
                     </div>
 
                     {/* Right Column - Trading History */}

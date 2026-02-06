@@ -107,6 +107,14 @@ export class PersistentPoolManager {
         const currentShares = existingPos ? BigInt(existingPos.shares) : 0n;
         const newShares = currentShares + result.totalShares;
 
+        // Safety check: newShares must be > 0 if usdcAmount > 0
+        if (usdcAmount > 0n && result.totalShares === 0n) {
+            console.error(`[PoolManager] CRITICAL: Bet ${usdcAmount} USDC yielded 0 shares. Pool State:`, pool);
+            throw new Error('Bet yielded 0 shares (unexpected)');
+        }
+
+        console.log(`[PoolManager] Updating position for ${userId}: Shares ${currentShares} -> ${newShares}`);
+
         // Calculate new average entry price
         const existingValue = existingPos
             ? Number(existingPos.shares) * existingPos.average_entry_price

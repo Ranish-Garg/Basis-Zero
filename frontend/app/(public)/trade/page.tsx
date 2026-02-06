@@ -29,24 +29,25 @@ export default function TradePage() {
 
     // Fetch markets to get the selected market details
     const { data: marketsData } = useMarkets()
-    
+
     // Check session state from session escrow
-    const { 
-        sessionState, 
-        activeSessionId, 
-        locked, 
+    const {
+        sessionState,
+        activeSessionId,
+        locked,
         fetchStreamingBalance,
         yieldAmount
     } = useSessionEscrow()
-    
+
     const { address, isConnected } = useAccount()
     const hasActiveSession = sessionState === SessionState.Active
 
     // Fetch streaming balance. 
     // We request safeMode=false to get full potential balance info, but we apply limits locally based on UI toggle.
+    // Pass activeSessionId directly to the fetch function to avoid stale closure issues.
     const { data: streamingData } = useQuery({
         queryKey: ['streaming-balance-for-trade', activeSessionId],
-        queryFn: () => fetchStreamingBalance(false), 
+        queryFn: () => fetchStreamingBalance(false, activeSessionId),
         enabled: !!activeSessionId && hasActiveSession,
         refetchInterval: 5000,
     })
@@ -59,18 +60,34 @@ export default function TradePage() {
     // Calculate max betting amount based on Safe Mode
     // Safe Mode: Max = Accrued Yield (from backend streaming)
     // Full Mode: Max = Available (which includes principal + yield from backend)
-    
+
     const streamYield = parseFloat(streamingData?.yield || "0")
     const streamAvailable = parseFloat(streamingData?.available || "0")
-    
+
     // Fallback to hook data if no streaming data yet
     const fallbackYield = parseFloat(yieldAmount || "0")
-    
+    const fallbackLocked = parseFloat(locked || "0")
+
+    // For Full Mode: Use streaming available if it has a non-zero value,
+    // otherwise fall back to on-chain locked amount (the session collateral).
+    // This handles the case where streaming data hasn't loaded yet or returns 0 
+    // due to a stale closure / backend session not yet synced.
     const maxBettingAmount = hasActiveSession
-        ? (isSafeMode 
+        ? (isSafeMode
             ? (streamYield > 0 ? streamYield.toString() : fallbackYield.toString())
-            : (streamAvailable > 0 ? streamAvailable.toString() : locked))
+            : (streamAvailable > 0 ? streamAvailable.toString() : fallbackLocked.toString()))
         : "0"
+
+    // Debug Logs
+    useEffect(() => {
+        if (hasActiveSession) {
+            console.log('[TradePage] Session Active:', activeSessionId)
+            console.log('[TradePage] Streaming Data:', streamingData)
+            console.log('[TradePage] Max Amount:', maxBettingAmount)
+            console.log('[TradePage] Stream Available:', streamAvailable)
+            console.log('[TradePage] Locked Fallback:', locked)
+        }
+    }, [hasActiveSession, activeSessionId, streamingData, maxBettingAmount])
 
     return (
         <div className="min-h-screen pt-24 pb-12 overflow-x-hidden">
@@ -85,7 +102,7 @@ export default function TradePage() {
                             Prediction Markets
                         </h1>
                         <p className="max-w-2xl text-base text-muted-foreground">
-                            {hasActiveSession 
+                            {hasActiveSession
                                 ? (isSafeMode ? "Safe Mode: Trading with yield only." : "Full Mode: Principal is at risk.")
                                 : "Start a session to trade. Your principal earns yield while locked."}
                         </p>

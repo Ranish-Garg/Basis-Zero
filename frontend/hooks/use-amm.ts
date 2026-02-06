@@ -177,6 +177,10 @@ export function usePlaceBet() {
             queryClient.invalidateQueries({
                 queryKey: ammKeys.position(variables.marketId, variables.userId)
             });
+            // Invalidate streaming balance so Max amount updates after trade
+            queryClient.invalidateQueries({ queryKey: ['streaming-balance-for-trade'] });
+            // Invalidate trade history so profile updates
+            queryClient.invalidateQueries({ queryKey: ['user-trades'] });
         },
     });
 }
@@ -196,6 +200,10 @@ export function useSellPosition() {
             queryClient.invalidateQueries({
                 queryKey: ammKeys.position(variables.marketId, variables.userId)
             });
+            // Invalidate streaming balance so Max amount updates after sell
+            queryClient.invalidateQueries({ queryKey: ['streaming-balance-for-trade'] });
+            // Invalidate trade history so profile updates
+            queryClient.invalidateQueries({ queryKey: ['user-trades'] });
         },
     });
 }
@@ -257,7 +265,8 @@ export function useClaimWinnings() {
         onSuccess: () => {
             // Refresh positions and session balance
             queryClient.invalidateQueries({ queryKey: ['amm-positions'] });
-            // We might not have a key for session yet, but usually handled by wallet hook or polling
+            // Invalidate trade history so profile updates
+            queryClient.invalidateQueries({ queryKey: ['user-trades'] });
         },
     });
 }

@@ -5,6 +5,7 @@ import { Check, X, Gavel, Loader2, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Market } from "@/lib/amm-types"
+import { useAccount } from "wagmi"
 
 interface ResolveMarketDialogProps {
     isOpen: boolean
@@ -16,6 +17,7 @@ export function ResolveMarketDialog({ isOpen, onClose, market }: ResolveMarketDi
     const [outcome, setOutcome] = useState<'YES' | 'NO' | null>(null)
     const [confirming, setConfirming] = useState(false)
     const queryClient = useQueryClient()
+    const { address } = useAccount()
 
     // Resolve Mutation
     const resolveMutation = useMutation({
@@ -39,6 +41,8 @@ export function ResolveMarketDialog({ isOpen, onClose, market }: ResolveMarketDi
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['amm', 'markets'] })
+            queryClient.invalidateQueries({ queryKey: ['user-trades'] })
+            queryClient.invalidateQueries({ queryKey: ['streaming-balance-for-trade'] })
             onClose()
         }
     })
@@ -58,7 +62,7 @@ export function ResolveMarketDialog({ isOpen, onClose, market }: ResolveMarketDi
             await resolveMutation.mutateAsync({
                 marketId: market.marketId,
                 outcome: outcome === 'YES' ? 0 : 1,
-                resolvedBy: "user-wallet" // Should be dynamic
+                resolvedBy: address || "unknown"
             })
         } catch (err) {
             console.error(err)
