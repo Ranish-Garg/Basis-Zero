@@ -110,7 +110,8 @@ export class YellowSessionService {
         res.json({ success: true, session: this.serializeSession(session) });
       } catch (error) {
         console.error('[Session Open] Error:', error);
-        res.status(500).json({ error: String(error) });
+        const message = error instanceof Error ? error.message : String(error);
+        res.status(500).json({ error: message });
       }
     });
 
@@ -243,6 +244,7 @@ export class YellowSessionService {
     return {
       ...session,
       collateral: session.collateral.toString(),
+      initialYield: session.initialYield.toString(),
     };
   }
 
@@ -480,24 +482,46 @@ export class YellowSessionService {
 
     session.status = 'closing';
 
-    // Calculate final PnL from resolved bets
-    const bets = this.sessionBets.get(sessionId) || [];
-    let pnl = BigInt(0);
-
-    for (const bet of bets) {
-      if (bet.resolved) {
-        if (bet.won) {
-          // Win: Payout = Shares * 1 USDC - Cost
-          pnl += (bet.shares - bet.amount);
-        } else {
-          // Loss: Payout = 0 - Cost
-          pnl -= bet.amount;
+    // Auto-settle any remaining positions in ACTIVE markets by force-selling them
+    try {
+      const activePositions = await ammRepository.getUserActivePositions(sessionId);
+      if (activePositions.length > 0) {
+        console.log(`🟡 Auto-selling ${activePositions.length} active positions before close`);
+        const { sellPositionDB } = await import('../amm/db-pool-manager.js');
+        for (const pos of activePositions) {
+          const shares = BigInt(pos.shares);
+          if (shares > 0n) {
+            try {
+              const outcome = pos.outcome === 'YES' ? Outcome.YES : Outcome.NO;
+              await sellPositionDB(pos.market_id, sessionId, shares, outcome);
+              console.log(`🟡 Auto-sold ${shares} ${pos.outcome} shares in ${pos.market_id}`);
+            } catch (sellErr) {
+              console.warn(`🟡 Failed to auto-sell position ${pos.market_id}/${pos.outcome}: ${sellErr}`);
+            }
+          }
         }
-      } else {
-        // Unresolved bets count as loss for now (user didn't sell before closing)
-        // In production, you might want to force-sell or handle differently
-        pnl -= bet.amount;
       }
+    } catch (err) {
+      console.warn(`🟡 Failed to auto-settle positions on close:`, err);
+    }
+
+    // Calculate PnL from DB current_balance (reflects all buys, sells, claims)
+    // PnL = current_balance - initial_collateral
+    // This is sent to the contract for real on-chain settlement.
+    // The contract holds deposits from ALL users, so losers' funds naturally pay winners.
+    let pnl = BigInt(0);
+    try {
+      const dbSession = await ammRepository.getSession(sessionId);
+      if (dbSession) {
+        const currentBalance = BigInt(dbSession.current_balance);
+        const initialCollateral = BigInt(dbSession.initial_collateral);
+        pnl = currentBalance - initialCollateral;
+        console.log(`🟡 Close PnL from DB: current=${currentBalance}, initial=${initialCollateral}, pnl=${pnl}`);
+      } else {
+        console.warn(`🟡 Session ${sessionId} not found in DB, falling back to 0 PnL`);
+      }
+    } catch (err) {
+      console.error(`🟡 Failed to read DB session for PnL:`, err);
     }
 
     // Generate signature for contract settlement
@@ -509,6 +533,21 @@ export class YellowSessionService {
     // Sign with private key
     const account = privateKeyToAccount(this.privateKey);
     const signature = await account.signMessage({ message: { raw: messageHash } });
+
+    // Persist the latest signature and status in DB
+    try {
+      const dbSession = await ammRepository.getSession(sessionId);
+      if (dbSession) {
+        await ammRepository.updateSessionBalance(
+          sessionId,
+          BigInt(dbSession.current_balance),
+          signature,
+          dbSession.nonce + 1
+        );
+      }
+    } catch (err) {
+      console.warn(`🟡 Failed to persist settlement signature to DB:`, err);
+    }
 
     session.status = 'closed';
 
@@ -579,12 +618,12 @@ export class YellowSessionService {
 
 
     // 2. Calculate Locked Amount (Used for bets)
-    // We must query the DB positions for this user (sessionId) to see what is currently locked in open positions
-    // Locked = Sum(Shares * AvgEntryPrice) for all open positions
+    // Only count positions from ACTIVE markets (not resolved/cancelled)
+    // Locked = Sum(Shares * AvgEntryPrice) for positions in ACTIVE markets only
     let openBetsLocked = BigInt(0);
 
     try {
-      const positions = await ammRepository.getUserPositions(sessionId);
+      const positions = await ammRepository.getUserActivePositions(sessionId);
 
       for (const pos of positions) {
         // shares is string in DB, average_entry_price is number
