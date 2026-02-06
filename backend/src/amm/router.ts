@@ -8,6 +8,7 @@ import { Outcome } from './types';
 import {
     createMarketDB,
     getActiveMarketsDB,
+    getMarketsByResolverDB,
     getMarketDB,
     placeBetDB,
     quoteBetDB,
@@ -67,6 +68,21 @@ ammRouter.get('/markets', async (req, res) => {
         res.json({ markets });
     } catch (err) {
         console.error('[AMM Markets] Error:', err);
+        res.status(500).json({ error: String(err), markets: [] });
+    }
+});
+
+// Get markets by resolver address (for profile page - includes all statuses )
+ammRouter.get('/markets/resolver/:address', async (req, res) => {
+    try {
+        const { address } = req.params;
+        if (!address) {
+            return res.status(400).json({ error: 'Missing resolver address' });
+        }
+        const markets = await getMarketsByResolverDB(address);
+        res.json({ markets });
+    } catch (err) {
+        console.error('[AMM Markets By Resolver] Error:', err);
         res.status(500).json({ error: String(err), markets: [] });
     }
 });
@@ -202,19 +218,22 @@ ammRouter.get('/pending-resolution', async (req, res) => {
 ammRouter.get('/positions/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
-        
-        // Import getUserPositions from db
-        const { getUserPositions } = await import('../db/amm-repository.js');
-        const positions = await getUserPositions(userId);
-        
-        // Calculate total value (shares are in USDC micro units)
+
+        // Only count positions from ACTIVE markets for totalValue (locked amount)
+        const { getUserActivePositions } = await import('../db/amm-repository.js');
+        const activePositions = await getUserActivePositions(userId);
+
+        // Calculate total value only from active market positions
         let totalValue = 0n;
-        for (const pos of positions) {
-            totalValue += BigInt(pos.shares || '0');
+        for (const pos of activePositions) {
+            const shares = BigInt(pos.shares || '0');
+            if (shares > 0n) {
+                totalValue += shares;
+            }
         }
-        
-        res.json({ 
-            positions: positions.map((p: { market_id: string; outcome: string; shares: string; average_entry_price: number }) => ({
+
+        res.json({
+            positions: activePositions.map((p: { market_id: string; outcome: string; shares: string; average_entry_price: number }) => ({
                 marketId: p.market_id,
                 outcome: p.outcome,
                 shares: p.shares,
@@ -256,5 +275,38 @@ ammRouter.post('/claim', async (req, res) => {
     } catch (err) {
         console.error('[AMM Claim] Error:', err);
         res.status(500).json({ error: String(err) });
+    }
+});
+
+// Get trade history for a user
+ammRouter.get('/trades/:userAddress', async (req, res) => {
+    try {
+        const { userAddress } = req.params;
+        if (!userAddress) {
+            return res.status(400).json({ error: 'Missing user address' });
+        }
+
+        const { getTradesByUser } = await import('../db/amm-repository.js');
+        const trades = await getTradesByUser(userAddress);
+
+        res.json({
+            trades: trades.map(t => ({
+                id: t.id,
+                sessionId: t.session_id,
+                userAddress: t.user_address,
+                marketId: t.market_id,
+                tradeType: t.trade_type,
+                outcome: t.outcome,
+                shares: t.shares,
+                price: t.price,
+                costBasis: t.cost_basis,
+                realizedPnl: t.realized_pnl,
+                marketTitle: t.market_title,
+                createdAt: t.created_at
+            }))
+        });
+    } catch (err) {
+        console.error('[AMM Trades] Error:', err);
+        res.status(500).json({ error: String(err), trades: [] });
     }
 });
