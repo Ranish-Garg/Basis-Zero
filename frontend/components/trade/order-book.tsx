@@ -11,9 +11,17 @@ interface OrderBookProps {
     selectedMarket?: Market | null
     userId?: string
     maxAmount?: string // Max betting amount (locked session amount)
+    isSafeMode?: boolean
+    onToggleSafeMode?: (enabled: boolean) => void
 }
 
-export function OrderBook({ selectedMarket, userId = "demo-user", maxAmount }: OrderBookProps) {
+export function OrderBook({ 
+    selectedMarket, 
+    userId = "demo-user", 
+    maxAmount,
+    isSafeMode = true,
+    onToggleSafeMode 
+}: OrderBookProps) {
     const [amount, setAmount] = useState("")
     const [selectedOutcome, setSelectedOutcome] = useState<Outcome | null>(null)
     const [sellingOutcome, setSellingOutcome] = useState<Outcome | null>(null)
@@ -102,10 +110,20 @@ export function OrderBook({ selectedMarket, userId = "demo-user", maxAmount }: O
                         Trade Panel
                     </h3>
                     <div className="flex items-center gap-2">
+                        {onToggleSafeMode && (
+                            <button
+                                onClick={() => onToggleSafeMode(!isSafeMode)}
+                                className={cn(
+                                    "px-2 py-0.5 rounded text-[10px] font-mono border transition-all",
+                                    isSafeMode 
+                                        ? "bg-green-500/10 border-green-500 text-green-500" 
+                                        : "bg-yellow-500/10 border-yellow-500 text-yellow-500"
+                                )}
+                            >
+                                {isSafeMode ? "SAFE MODE" : "FULL MODE"}
+                            </button>
+                        )}
                         <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-                        <span className="font-mono text-xs text-muted-foreground">
-                            AMM Pool
-                        </span>
                     </div>
                 </div>
                 {selectedMarket && (

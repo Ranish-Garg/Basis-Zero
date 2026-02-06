@@ -19,9 +19,10 @@ import {
   type MessageSigner,
 } from '@erc7824/nitrolite';
 import { privateKeyToAccount } from 'viem/accounts';
-import { createWalletClient, http, type Address, type Hex, keccak256, encodePacked, toHex } from 'viem';
+import { createWalletClient, createPublicClient, http, type Address, type Hex, keccak256, encodePacked, toHex } from 'viem';
 import { polygonAmoy } from 'viem/chains';
 import { poolManager, Outcome } from '../amm';
+import { SESSION_ESCROW_ADDRESS, SESSION_ESCROW_ABI } from './contracts';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -32,6 +33,7 @@ export interface SessionConfig {
   user: Address;
   collateral: bigint;
   rwaRateBps: number;      // Yield rate in basis points (520 = 5.2%)
+  initialYield: bigint;    // Accrued yield at session start (from contract)
   safeModeEnabled: boolean;
   createdAt: number;
   status: 'pending' | 'active' | 'closing' | 'closed';
@@ -271,6 +273,74 @@ export class YellowSessionService {
     
     console.log(`🟡 Opening Session for ${userAddress}`);
     console.log(`   Session ID: ${sessionId}`);
+    
+    // FETCH ON-CHAIN DATA (Source of Truth)
+    const publicClient = createPublicClient({ 
+      chain: polygonAmoy, 
+      transport: http(process.env.POLYGON_AMOY_RPC_URL) 
+    });
+
+    let onChainRate = BigInt(rwaRateBps); // Default fallback
+    let initialYield = BigInt(0);
+
+    try {
+        console.log(`🔌 Syncing with Contract: ${SESSION_ESCROW_ADDRESS}`);
+        
+        // 1. Get Yield Rate
+        const rateBps = await publicClient.readContract({
+            address: SESSION_ESCROW_ADDRESS,
+            abi: SESSION_ESCROW_ABI,
+            functionName: 'yieldRateBps'
+        });
+        onChainRate = BigInt(rateBps);
+        console.log(`   On-Chain Yield Rate: ${onChainRate} bps`);
+
+        // 2. Get Initial Accrued Yield
+        const info = await publicClient.readContract({
+            address: SESSION_ESCROW_ADDRESS,
+            abi: SESSION_ESCROW_ABI,
+            functionName: 'getAccountInfo',
+            args: [userAddress]
+        });
+        // info struct: { principal, yield, locked, activeSessionId, state }
+        // Note: viem returns array or object depending on calling convention? 
+        // Based on ABI outputs with names, viem returns object or array of values. 
+        // ABI has named outputs, so checks types.
+        // Assuming viem returns object-like or I access by index if array.
+        // Usually returns object if names present? Let's check viem behavior: 
+        // ABI defined with names -> returns object if multicall/readContract support it?
+        // Actually, with simple ABI readContract returns result matching structure.
+        // Let's assume property access works or use 'any'.
+        // Safe bet: use (info as any).yield or similar.
+        // BUT wait, in my ABI `accounts` returned struct, `getAccountInfo` returned tuple with names.
+        // `viem` usually returns array/tuple for multiple return values unless mapped.
+        // Let's assume array for safety: [principal, yield, locked, ...]
+        
+        // Checking my ABI: getAccountInfo outputs multiple values (tuple), not struct.
+        // So return value is array: [principal, yield, locked, activeSessionId, state]
+        
+        // Wait, 'info' type? in TS 'readContract' infers type.
+        // Because ABI is 'const', TS knows.
+        // However, I need to be sure. I'll treat it as array.
+        // Wait, 'getAccountInfo' returns multiple values.
+        
+        // If I use the updated ABI, I see output names.
+        // Just in case, I'll log it.
+        const infoResult: any = info; 
+        // Assuming array-like access
+        if (infoResult && typeof infoResult[1] !== 'undefined') {
+             initialYield = infoResult[1];
+        } else if (infoResult && infoResult.yield) {
+             initialYield = infoResult.yield;
+        }
+        
+        console.log(`   Initial Accrued Yield: ${initialYield}`);
+
+    } catch (error) {
+        console.error("⚠️ Failed to sync with contract:", error);
+        // Fallback to 0 initial yield and provided rate
+    }
+
     console.log(`   Collateral: ${collateral}`);
     console.log(`   Safe Mode: ${safeModeEnabled}`);
 
@@ -278,8 +348,13 @@ export class YellowSessionService {
       sessionId,
       user: normalizedUser,
       collateral,
-      rwaRateBps,
-      safeModeEnabled,
+      rwaRateBps: Number(onChainRate),
+      initialYield: initialYield,
+      safeModeEnabled, // Should probably enforce strict mode here if contract says so? 
+                       // Currently user requested "Allow betting full locked amount".
+                       // Safe Mode boolean in backend is "Bet Only Yield". 
+                       // Full Mode is "Bet Principal + Yield".
+                       // This flag comes from frontend request?
       createdAt: Date.now(),
       status: 'active',
     };
@@ -455,19 +530,20 @@ export class YellowSessionService {
     const secondsPerYear = 365 * 24 * 60 * 60;
 
     // yield = principal * rate * time / (year * 10000)
-    const yieldAmount =
+    const newYieldSinceSessionStart =
       (session.collateral * BigInt(session.rwaRateBps) * BigInt(Math.floor(elapsedSeconds))) /
       BigInt(Math.floor(secondsPerYear * 10000));
+      
+    // Total Yield = Initial (Synced) + New (Local)
+    const yieldAmount = (session.initialYield || BigInt(0)) + newYieldSinceSessionStart;
 
     let available: bigint;
-    if (safeMode) {
-      // Safe Mode: only yield available for betting (Yield-Only mode)
-      available = yieldAmount > openBets ? yieldAmount - openBets : BigInt(0);
-    } else {
-      // Full Mode: principal + yield - openBets
-      const total = session.collateral + yieldAmount;
-      available = total > openBets ? total - openBets : BigInt(0);
-    }
+    
+    // User Update: Allow betting full locked amount + yield in ALL modes (Safe Mode limit removed)
+    // Full Mode & Safe Mode: principal + yield - openBets
+    const total = session.collateral + yieldAmount;
+    available = total > openBets ? total - openBets : BigInt(0);
+
 
     return {
       principal: session.collateral,

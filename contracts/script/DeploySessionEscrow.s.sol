@@ -35,7 +35,11 @@ contract DeploySessionEscrow is Script {
 
         // Setup initial trusted signer (Backend Server Address)
         // You should set this to your backend's wallet address
-        // escrow.setNitroliteSigner(backendAddress, true);
+        address backendAddress = 0x561009A39f2BC5a975251685Ae8C7F98Fac063C7;
+        escrow.setNitroliteSigner(backendAddress, true);
+        
+        // Set initial Yield Rate (e.g. 5200 BPS = 52% for demo)
+        escrow.setYieldRate(5200);
 
         vm.stopBroadcast();
     }

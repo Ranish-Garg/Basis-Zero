@@ -60,13 +60,38 @@ export function useSessionEscrow() {
         query: { enabled: !!address }
     })
 
+    // Read Yield Rate
+    const { data: yieldRateData } = useReadContract({
+        address: SESSION_ESCROW_ADDRESS,
+        abi: SESSION_ESCROW_ABI,
+        functionName: "yieldRateBps",
+        chainId: polygonAmoy.id
+    })
+
+    // Process Yield Rate
+    const yieldRateBps = yieldRateData ? Number(yieldRateData) : 0
+
     const parsedAccount = useMemo(() => {
         if (!accountInfo) return null
-        const [deposited, available, locked, activeSessionId, state] = accountInfo as [bigint, bigint, bigint, Hex, number]
+        // Contract returns: [principal, yield, locked, activeSessionId, state]
+        const [principal, accruedYield, locked, activeSessionId, state] = accountInfo as [bigint, bigint, bigint, Hex, number]
+        
+        // Calculate available principal to withdraw/lock
+        const availablePrincipal = principal - locked
+        
+        // Total Value = Principal + Yield
+        const totalBalance = principal + accruedYield
+        
+        // Withdrawable = Available Principal + Yield (assuming you can withdraw both)
+        const withdrawable = availablePrincipal + accruedYield
+
         return {
-            deposited: formatUnits(deposited, 6),
-            available: formatUnits(available, 6),
+            deposited: formatUnits(principal, 6), // Total Principal
+            yield: formatUnits(accruedYield, 6),
+            available: formatUnits(availablePrincipal, 6), // Available Principal
             locked: formatUnits(locked, 6),
+            totalBalance: formatUnits(totalBalance, 6),
+            withdrawable: formatUnits(withdrawable, 6),
             activeSessionId,
             state: state as SessionState
         }
@@ -183,8 +208,7 @@ export function useSessionEscrow() {
                     sessionId: sessionId,
                     collateral: collateralBig,
                     safeModeEnabled: safeMode,
-                    // DEMO: 520000 = 5200% APY (100x boost for testing)
-                    rwaRateBps: 520000
+                    rwaRateBps: yieldRateBps || 5200 // Use fetched rate or default
                 })
             })
             
@@ -198,7 +222,7 @@ export function useSessionEscrow() {
             console.error("Backend session notification failed:", error)
             return null
         }
-    }, [address])
+    }, [address, yieldRateBps])
 
     // Close session via backend (gets signature for contract settlement)
     const closeSession = useCallback(async () => {
@@ -301,9 +325,13 @@ export function useSessionEscrow() {
 
     return {
         // Data
-        deposited: parsedAccount?.deposited || "0",
-        available: parsedAccount?.available || "0",
+        yieldRateBps,
+        deposited: parsedAccount?.deposited || "0", // Total Principal
+        yieldAmount: parsedAccount?.yield || "0",   // Accrued Yield
+        available: parsedAccount?.available || "0", // Available Principal
         locked: parsedAccount?.locked || "0",
+        totalBalance: parsedAccount?.totalBalance || "0", // Principal + Yield
+        withdrawable: parsedAccount?.withdrawable || "0", // Available Principal + Yield
         sessionState: parsedAccount?.state ?? SessionState.None,
         activeSessionId: parsedAccount?.activeSessionId,
         usdcBalance,

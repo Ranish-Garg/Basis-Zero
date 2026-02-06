@@ -22,6 +22,8 @@ export default function TradePage() {
     const [selectedMarketId, setSelectedMarketId] = useState<string | null>(null)
     const [showCreateDialog, setShowCreateDialog] = useState(false)
     const [mounted, setMounted] = useState(false)
+    // Betting Mode Toggle (Default to Safe Mode)
+    const [isSafeMode, setIsSafeMode] = useState(true)
 
     useEffect(() => setMounted(true), [])
 
@@ -33,16 +35,18 @@ export default function TradePage() {
         sessionState, 
         activeSessionId, 
         locked, 
-        fetchStreamingBalance 
+        fetchStreamingBalance,
+        yieldAmount
     } = useSessionEscrow()
     
     const { address, isConnected } = useAccount()
     const hasActiveSession = sessionState === SessionState.Active
 
-    // Fetch streaming balance for max betting amount (yield-only mode)
+    // Fetch streaming balance. 
+    // We request safeMode=false to get full potential balance info, but we apply limits locally based on UI toggle.
     const { data: streamingData } = useQuery({
         queryKey: ['streaming-balance-for-trade', activeSessionId],
-        queryFn: () => fetchStreamingBalance(true), // safeMode = true for yield-only
+        queryFn: () => fetchStreamingBalance(false), 
         enabled: !!activeSessionId && hasActiveSession,
         refetchInterval: 5000,
     })
@@ -52,12 +56,20 @@ export default function TradePage() {
         ? marketsData?.markets?.find(m => m.marketId === selectedMarketId) || null
         : null
 
-    // Calculate max betting amount
-    // In yield-only mode: only accrued yield available for betting
-    // For now we show yield available. In full mode, it would be the full locked amount.
-    const yieldAvailable = parseFloat(streamingData?.available || "0")
-    const maxBettingAmount = hasActiveSession 
-        ? (yieldAvailable > 0 ? yieldAvailable.toString() : locked)
+    // Calculate max betting amount based on Safe Mode
+    // Safe Mode: Max = Accrued Yield (from backend streaming)
+    // Full Mode: Max = Available (which includes principal + yield from backend)
+    
+    const streamYield = parseFloat(streamingData?.yield || "0")
+    const streamAvailable = parseFloat(streamingData?.available || "0")
+    
+    // Fallback to hook data if no streaming data yet
+    const fallbackYield = parseFloat(yieldAmount || "0")
+    
+    const maxBettingAmount = hasActiveSession
+        ? (isSafeMode 
+            ? (streamYield > 0 ? streamYield.toString() : fallbackYield.toString())
+            : (streamAvailable > 0 ? streamAvailable.toString() : locked))
         : "0"
 
     return (
@@ -74,7 +86,7 @@ export default function TradePage() {
                         </h1>
                         <p className="max-w-2xl text-base text-muted-foreground">
                             {hasActiveSession 
-                                ? "Trade using your accrued yield. Your principal stays protected."
+                                ? (isSafeMode ? "Safe Mode: Trading with yield only." : "Full Mode: Principal is at risk.")
                                 : "Start a session to trade. Your principal earns yield while locked."}
                         </p>
                     </div>
@@ -100,8 +112,11 @@ export default function TradePage() {
                             selectedMarket={selectedMarket}
                             userId={activeSessionId || address || "guest"}
                             maxAmount={maxBettingAmount}
+                            isSafeMode={isSafeMode}
+                            onToggleSafeMode={setIsSafeMode}
                         />
                     </div>
+
 
                     {/* Right Column - Market Grid */}
                     <div className="lg:col-span-8">

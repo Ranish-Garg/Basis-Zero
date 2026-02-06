@@ -52,6 +52,9 @@ contract SessionEscrow is Ownable, ReentrancyGuard {
     
     /// @notice Protocol fee in basis points (e.g., 1000 = 10%)
     uint256 public protocolFeeBps;
+
+    /// @notice Annual Yield Rate in basis points (e.g., 500 = 5%)
+    uint256 public yieldRateBps;
     
     /// @notice Protocol fee recipient
     address public protocolTreasury;
@@ -67,7 +70,10 @@ contract SessionEscrow is Ownable, ReentrancyGuard {
     // ═══════════════════════════════════════════════════════════════════════════
     
     struct UserAccount {
-        uint256 depositedAmount;  // Total funds deposited (Available + Locked)
+        uint256 principalBalance; // Total Principal (Available + Locked)
+        uint256 accruedYield;     // Earned Yield
+        uint256 lastUpdateTimestamp; // For yield accrual
+        
         uint256 lockedAmount;     // Funds currently locked in a session
         bytes32 activeSessionId;  // Current session ID (if any)
         uint256 sessionStartTime; // When the current session started
@@ -143,6 +149,22 @@ contract SessionEscrow is Ownable, ReentrancyGuard {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
+    // MODIFIERS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    modifier updateYield(address user) {
+        UserAccount storage acc = accounts[user];
+        if (acc.lastUpdateTimestamp > 0 && acc.principalBalance > 0) {
+            uint256 timeElapsed = block.timestamp - acc.lastUpdateTimestamp;
+            // Yield = Principal * Rate * Time / (365 days * 10000)
+            uint256 earned = (acc.principalBalance * yieldRateBps * timeElapsed) / (365 days * 10000);
+            acc.accruedYield += earned;
+        }
+        acc.lastUpdateTimestamp = block.timestamp;
+        _;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
     // USER FUNCTIONS
     // ═══════════════════════════════════════════════════════════════════════════
     
@@ -150,12 +172,16 @@ contract SessionEscrow is Ownable, ReentrancyGuard {
      * @notice Deposit USDC into the vault
      * @param amount Amount to deposit
      */
-    function deposit(uint256 amount) external nonReentrant {
+    /**
+     * @notice Deposit USDC into the vault
+     * @param amount Amount to deposit
+     */
+    function deposit(uint256 amount) external nonReentrant updateYield(msg.sender) {
         if (amount == 0) revert ZeroAmount();
         
         USDC.safeTransferFrom(msg.sender, address(this), amount);
         
-        accounts[msg.sender].depositedAmount += amount;
+        accounts[msg.sender].principalBalance += amount;
         
         emit Deposited(msg.sender, amount);
     }
@@ -164,15 +190,38 @@ contract SessionEscrow is Ownable, ReentrancyGuard {
      * @notice Withdraw available USDC
      * @param amount Amount to withdraw
      */
-    function withdraw(uint256 amount) external nonReentrant {
+    /**
+     * @notice Withdraw available USDC
+     * @param amount Amount to withdraw
+     */
+    function withdraw(uint256 amount) external nonReentrant updateYield(msg.sender) {
         if (amount == 0) revert ZeroAmount();
         
         UserAccount storage userAcc = accounts[msg.sender];
-        uint256 available = userAcc.depositedAmount - userAcc.lockedAmount;
+        uint256 available = userAcc.principalBalance - userAcc.lockedAmount;
+        
+        // Check if withdrawing yield? No, separate withdrawYield? 
+        // For simplicity, withdraw takes from principal mainly, but what about accrued?
+        // Let's assume withdrawing principal first.
+        // User can withdraw principal + accrued?
+        // Let's allow withdrawing up to principalBalance first.
         
         if (amount > available) revert InsufficientBalance();
         
-        userAcc.depositedAmount -= amount;
+        userAcc.principalBalance -= amount;
+        USDC.safeTransfer(msg.sender, amount);
+        
+        emit Withdrawn(msg.sender, amount);
+    }
+
+    /**
+     * @notice Withdraw Accrued Yield
+     */
+    function withdrawYield() external nonReentrant updateYield(msg.sender) {
+        uint256 amount = accounts[msg.sender].accruedYield;
+        if (amount == 0) revert ZeroAmount();
+        
+        accounts[msg.sender].accruedYield = 0;
         USDC.safeTransfer(msg.sender, amount);
         
         emit Withdrawn(msg.sender, amount);
@@ -183,14 +232,14 @@ contract SessionEscrow is Ownable, ReentrancyGuard {
      * @param amount Amount to lock for the session
      * @param sessionId Unique session ID provided by backend/client
      */
-    function openSession(uint256 amount, bytes32 sessionId) external nonReentrant {
+    function openSession(uint256 amount, bytes32 sessionId) external nonReentrant updateYield(msg.sender) {
         if (amount == 0) revert ZeroAmount();
         
         UserAccount storage userAcc = accounts[msg.sender];
         
         if (userAcc.activeSessionId != bytes32(0)) revert UserAlreadyHasActiveSession();
         
-        uint256 available = userAcc.depositedAmount - userAcc.lockedAmount;
+        uint256 available = userAcc.principalBalance - userAcc.lockedAmount;
         if (amount > available) revert InsufficientBalance();
         
         // Lock funds
@@ -218,7 +267,16 @@ contract SessionEscrow is Ownable, ReentrancyGuard {
         address user = sessionUsers[sessionId];
         if (user == address(0)) revert SessionNotFound();
         
+        // Apply yield update before settlement
         UserAccount storage userAcc = accounts[user];
+        
+        // Manual updateYield logic here to avoid 'stack too deep' or modifier issues with 'user' var
+        if (userAcc.lastUpdateTimestamp > 0 && userAcc.principalBalance > 0) {
+           uint256 timeElapsed = block.timestamp - userAcc.lastUpdateTimestamp;
+           uint256 earned = (userAcc.principalBalance * yieldRateBps * timeElapsed) / (365 days * 10000);
+           userAcc.accruedYield += earned;
+        }
+        userAcc.lastUpdateTimestamp = block.timestamp;
         
         if (userAcc.activeSessionId != sessionId) revert SessionIdMismatch();
         if (userAcc.sessionState != SessionState.Active) revert InvalidSessionState();
@@ -228,50 +286,50 @@ contract SessionEscrow is Ownable, ReentrancyGuard {
         
         // Resolve logic
         uint256 locked = userAcc.lockedAmount;
-        uint256 payout = locked; // Start with principal
         uint256 protocolFee = 0;
+        uint256 netPayout = 0; // Just for event
         
         if (pnl >= 0) {
-            // WIN: User gets Locked + Win - Fee
-            // (Note: In this simplified vault, money comes from... where?
-            //  In a real system, the counterparty (Yellow Node) would have deposited funds too.
-            //  Or the PnL comes from a liquidity pool.
-            //  For this "Yield Only" demo, funds might logically come from the accrued yield buffer or the 'House'
-            //  Since we don't have a House pool here, we assume the Contract Balance covers the win. 
-            //  IF contract runs out of money, user just gets what's there? 
-            //  Ideally, `settleSession` should only be called if we have funds.
-            //  For simplicity, we mint/transfer or assume the treasury Top-Up.)
-            
+            // WIN
             uint256 winAmount = uint256(pnl);
             
             // Fee on winnings
             protocolFee = (winAmount * protocolFeeBps) / BPS_DENOMINATOR;
             uint256 netWin = winAmount - protocolFee;
             
-            payout += netWin;
+            // Add to principal (Realized Gain)
+            // Or should it go to Accrued Yield? Usually realized trading gains go to Principal.
+            userAcc.principalBalance += netWin;
             
-            // Update depositedAmount to reflect new balance
-            userAcc.depositedAmount += netWin;
-            
-            // In a real system, we'd transfer Fee to Treasury here or update bookkeeping
             if (protocolFee > 0) {
-                 // We don't deduct from user deposit, we just don't credit it.
-                 // But we need to ensure the contract has the funds.
-                 // We assume the contract has funds.
+                // Ensure contract has funds (Assuming Treasury/House model or Inflationary for Demo)
+                // For this demo, we assume contract has funds.
                 USDC.safeTransfer(protocolTreasury, protocolFee);
             }
         } else {
             // LOSS
             uint256 lossAmount = uint256(-pnl);
-            if (lossAmount > locked) {
-                // Total loss (should limit to locked amount)
-                lossAmount = locked;
+            
+            // 1. Deduct from Accrued Yield FIRST
+            if (userAcc.accruedYield >= lossAmount) {
+                userAcc.accruedYield -= lossAmount;
+            } else {
+                // Not enough yield, take what we can
+                uint256 yieldCover = userAcc.accruedYield;
+                userAcc.accruedYield = 0;
+                
+                uint256 remainingLoss = lossAmount - yieldCover;
+                
+                // 2. Deduct remaining from Principal (Locked Amount)
+                // Safe Mode should enforce remainingLoss == 0 off-chain.
+                // If remainingLoss > 0 here, user effectively played in Full Mode.
+                
+                if (remainingLoss > userAcc.principalBalance) {
+                     // Should not happen if logic is correct, but cap at principal
+                     remainingLoss = userAcc.principalBalance;
+                }
+                userAcc.principalBalance -= remainingLoss;
             }
-            
-            payout -= lossAmount;
-            
-            // Update deposited amount
-            userAcc.depositedAmount -= lossAmount;
         }
         
         // Unlock
@@ -280,7 +338,7 @@ contract SessionEscrow is Ownable, ReentrancyGuard {
         userAcc.sessionState = SessionState.Settled;
         delete sessionUsers[sessionId];
         
-        emit SessionSettled(user, sessionId, pnl, payout, protocolFee);
+        emit SessionSettled(user, sessionId, pnl, userAcc.principalBalance, protocolFee);
     }
     
     /**
@@ -361,21 +419,32 @@ contract SessionEscrow is Ownable, ReentrancyGuard {
         protocolTreasury = treasury;
     }
     
+    function setYieldRate(uint256 _yieldRateBps) external onlyOwner {
+        yieldRateBps = _yieldRateBps;
+    }
+    
     // ═══════════════════════════════════════════════════════════════════════════
     // VIEW FUNCTIONS
     // ═══════════════════════════════════════════════════════════════════════════
     
     function getAccountInfo(address user) external view returns (
-        uint256 deposited,
-        uint256 available,
+        uint256 principal,
+        uint256 yield,
         uint256 locked,
         bytes32 activeSessionId,
         SessionState state
     ) {
         UserAccount storage acc = accounts[user];
+        uint256 pendingYield = 0;
+        
+        if (acc.principalBalance > 0 && acc.lastUpdateTimestamp > 0) {
+             uint256 timeElapsed = block.timestamp - acc.lastUpdateTimestamp;
+             pendingYield = (acc.principalBalance * yieldRateBps * timeElapsed) / (365 days * 10000);
+        }
+        
         return (
-            acc.depositedAmount,
-            acc.depositedAmount - acc.lockedAmount,
+            acc.principalBalance,
+            acc.accruedYield + pendingYield,
             acc.lockedAmount,
             acc.activeSessionId,
             acc.sessionState
