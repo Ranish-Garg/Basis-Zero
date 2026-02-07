@@ -139,7 +139,6 @@ async function placeBet(params: {
     return response.json();
 }
 
-
 async function sellPosition(params: {
     marketId: string;
     userId: string;
