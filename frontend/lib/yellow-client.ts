@@ -56,9 +56,10 @@ export class YellowClientManager {
         walletClient,
         challengeDuration: 60n, // 60 blocks default
         addresses: {
-          adjudicator: '0x0000000000000000000000000000000000000000',
-          assetHolder: '0x0000000000000000000000000000000000000000',
-          challengeToken: '0x0000000000000000000000000000000000000000',
+          // Official Polygon Amoy Testnet Addresses for Nitrolite
+          adjudicator: '0x7c7ccbc98469190849BCC6c926307794fDfB11F2',
+          assetHolder: '0x019B65A265EB3363822f2752141b3dF16131b262',
+          challengeToken: '0x0000000000000000000000000000000000000000', // Token not strictly needed for this flow
         } as any 
       });
 
