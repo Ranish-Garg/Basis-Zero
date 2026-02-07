@@ -15,6 +15,7 @@ import type {
 } from '@/lib/amm-types';
 import { yellowClientManager } from '@/lib/yellow-client';
 import { type Hex, keccak256, encodePacked } from 'viem';
+import { yellowEvents } from '@/lib/events';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // QUERY KEYS
@@ -117,6 +118,20 @@ async function placeBet(params: {
         // Sign the intent
         try {
             signature = await yellowClientManager.signMessage(intentHash);
+            
+            // LOGGING FOR DEMO
+            yellowEvents.emit({
+                type: 'SIGNATURE',
+                message: `Bet Signed with Session Key: ${signerAddress}`,
+                hash: signature,
+                data: {
+                    marketId: params.marketId,
+                    amount: params.amount,
+                    outcome: params.outcome,
+                    intentHash
+                }
+            });
+
         } catch (e) {
             console.warn("Failed to sign bet with session key:", e);
         }
