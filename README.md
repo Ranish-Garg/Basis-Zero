@@ -17,22 +17,22 @@ High-level overview of how the Frontend, Backend (Yellow Node), and Blockchain i
 ```mermaid
 graph TD
     subgraph "Client Layer"
-        User[User / Bettor]
-        FE[Frontend (Next.js)]
-        YellowSDK[Yellow SDK (Nitrolite)]
+        User["User / Bettor"]
+        FE["Frontend (Next.js)"]
+        YellowSDK["Yellow SDK (Nitrolite)"]
     end
 
     subgraph "Off-Chain Layer (Private Hub)"
-        BE[Backend Service (Node.js)]
-        AMM[AMM Engine (CPMM)]
-        Signer[Nitrolite Signer]
-        DB[(Supabase / State Store)]
+        BE["Backend Service (Node.js)"]
+        AMM["AMM Engine (CPMM)"]
+        Signer["Nitrolite Signer"]
+        DB[("Supabase / State Store")]
     end
 
     subgraph "On-Chain Layer (Polygon Amoy)"
-        Contract[SessionEscrow.sol]
-        USDC[USDC Token]
-        Oracle[Market Oracle]
+        Contract["SessionEscrow.sol"]
+        USDC["USDC Token"]
+        Oracle["Market Oracle"]
     end
 
     User -->|Interacts| FE
