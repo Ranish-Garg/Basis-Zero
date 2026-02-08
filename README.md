@@ -161,6 +161,133 @@ Open `http://localhost:3000` and start trading!
 
 ---
 
+---
+
+## 🔮 Future Goals: Multi-Chain Unified Balance
+
+> The contracts and backend modules for this architecture are **already built** (`NitroliteCustody.sol`, `clearnode/` backend module). The current demo runs single-chain on Polygon Amoy via `SessionEscrow`. The following describes the production-ready multi-chain expansion.
+
+### Goal
+Let users deposit USDC on **any supported chain** (Ethereum Sepolia, Polygon Amoy, Base Sepolia) and trade with a single **Unified Balance** — no bridging required.
+
+### Architecture Overview
+
+| Component | Current (v1) | Future (v2) |
+|-----------|-------------|-------------|
+| **Deposit Chain** | Polygon Amoy only | Any supported chain |
+| **Custody Contract** | SessionEscrow.sol | NitroliteCustody deployed per chain |
+| **Balance Source** | Single on-chain read | Aggregated across all chains via Clearnode |
+| **Trading Channel** | HTTP API sessions | Nitrolite 2-party state channels |
+| **Settlement** | settleSession() on Amoy | settleChannel() on deposit chain OR applyCrossChainSettlement() |
+| **Yield** | On-chain in SessionEscrow | Separate yield layer (optional, only on Amoy) |
+
+### Multi-Chain System Components
+
+```mermaid
+graph TD
+    subgraph "Client Layer"
+        User["User / Bettor"]
+        FE["Frontend (Next.js)"]
+        YellowSDK["Yellow SDK (Nitrolite)"]
+    end
+
+    subgraph "Off-Chain Layer (Yellow Network Hub)"
+        Clearnode["Yellow Clearnode"]
+        UB["Unified Balance Aggregator"]
+        BE["Backend / Broker"]
+        AMM["AMM Engine (CPMM)"]
+        DB[("Supabase")]
+    end
+
+    subgraph "On-Chain Layer (Amoy · Sepolia · Base)"
+        Custody["NitroliteCustody (per chain)"]
+        USDC["USDC Token"]
+    end
+
+    User -->|Interacts| FE
+    FE -->|Embeds| YellowSDK
+    YellowSDK -->|1. Open State Channel| Clearnode
+
+    Clearnode -->|2. Aggregate Deposits| UB
+    Clearnode -->|3. Route to Broker| BE
+    BE -->|4. Execute Trade| AMM
+    AMM -->|Persist State| DB
+    BE -->|5. Signed State Update| FE
+
+    FE -->|6. Deposit on Any Chain| Custody
+    Custody -->|Lock Collateral| USDC
+    Custody -.->|Deposit Event| UB
+
+    BE -->|7. settleChannel / crossChainSettle| Custody
+```
+
+### Multi-Chain Session Flow (Sequence Diagram)
+
+Demonstrates how a user deposits on Sepolia, trades using their Unified Balance, and settles — either back on Sepolia or cross-chain to Polygon Amoy.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant FE as Frontend
+    participant CustodyX as NitroliteCustody<br/>(Any Chain)
+    participant Clearnode as Yellow Clearnode
+    participant UB as Unified Balance
+    participant Backend as Broker / Backend
+    participant AMM as AMM Engine
+
+    Note over User, AMM: Phase 1 — Multi-Chain Deposit
+    User->>FE: Choose chain & deposit amount
+    FE->>CustodyX: deposit(amount) on chosen chain
+    CustodyX-->>UB: Deposit event indexed
+    UB->>Clearnode: Update unified balance
+
+    Note over User, AMM: Phase 2 — State Channel & Trading
+    FE->>Clearnode: Open state channel (ERC-7824)
+    Clearnode->>Backend: Route channel to broker
+    Backend->>AMM: Register session balance
+    loop Trading Loop
+        User->>FE: Place bet (sign intent)
+        FE->>Backend: Submit signed intent
+        Backend->>AMM: Execute trade
+        AMM-->>Backend: Trade result
+        Backend-->>FE: Updated position
+    end
+
+    Note over User, AMM: Phase 3 — Settlement
+    User->>FE: Close session
+    FE->>Backend: Request settlement
+    Backend->>AMM: Calculate final P&L
+    AMM-->>Backend: Settlement amounts
+
+    alt Same-Chain Settlement
+        Backend->>CustodyX: settleChannel(finalBalances)
+        CustodyX-->>User: Release USDC on same chain
+    else Cross-Chain Settlement
+        Backend->>Clearnode: Request cross-chain settlement
+        Clearnode->>CustodyX: applyCrossChainSettlement(proof)
+        CustodyX-->>User: Adjusted balance on deposit chain
+    end
+```
+
+### Key Differences from Current Implementation
+
+| Aspect | Current (SessionEscrow) | Future (NitroliteCustody) |
+|--------|------------------------|--------------------------|
+| **Collateral locking** | `openSession()` locks on Polygon Amoy | `createChannel()` locks on any chain |
+| **Trading** | Backend API calls, no state channel | Nitrolite 2-party state channel protocol |
+| **Settlement signing** | Backend signs `keccak256(sessionId, pnl)` | Backend signs `keccak256(channelId, payoutA, payoutB, chainId)` |
+| **Dispute resolution** | 24h timeout release | Challenge period — either party can submit a newer state |
+| **Cross-chain** | Not supported | `applyCrossChainSettlement()` credits/debits on a different chain |
+| **Yield** | Built into SessionEscrow | Off-chain yield calculation (or use SessionEscrow on Amoy for yield) |
+
+### Contracts Already Built
+
+- **`NitroliteCustody.sol`** — Nitrolite-compatible custody with channel management, cross-chain settlement, Clearnode signature verification
+- **`SessionEscrow.sol`** — Already has `applyCrossChainSettlement()` to receive cross-chain proofs
+- **Backend `clearnode/` module** — `ClearnodeClient`, `UnifiedBalanceService`, `MultiChainSettlement` — all ready for Clearnode WebSocket integration
+
+---
+
 ## 🏆 Hackathon Tracks
 **Yellow Network**:
 - **SDK Integration**: Utilizes `SessionKeyStateSigner` for client-side signing.

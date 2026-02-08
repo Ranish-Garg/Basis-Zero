@@ -21,7 +21,7 @@ export const metadata: Metadata = {
         default: "Basis Zero — Zero Opportunity Cost Prediction Market",
         template: "%s — Basis Zero",
     },
-    description: "Trade the world, keep your yield. Deposit USDC via Circle Arc, earn yield from BlackRock BUIDL RWAs, and trade prediction markets using only your accrued yield.",
+    description: "Trade the world, keep your yield. Deposit USDC into the Yield Vault, earn RWA yield, and trade prediction markets using only your accrued yield via Yellow Network.",
 };
 
 // ... existing code ...

@@ -1,15 +1,14 @@
 import { HeroSection } from "@/components/hero-section";
 import { MetricsTicker } from "@/components/metrics-ticker";
 import { HowItWorks } from "@/components/how-it-works";
-import { MarketPreview } from "@/components/market-preview";
 import type { Metadata } from "next";
 
 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://basiszero.io';
 
 export const metadata: Metadata = {
     title: "Basis Zero — Zero Opportunity Cost Prediction Market",
-    description: "Trade the world, keep your yield. Deposit USDC via Circle Arc, earn yield from BlackRock BUIDL RWAs, and trade prediction markets using only your accrued yield.",
-    keywords: ["prediction market", "DeFi", "yield farming", "RWA", "Circle Arc", "Yellow Network", "zero opportunity cost"],
+    description: "Trade the world, keep your yield. Deposit USDC into the Yield Vault, earn RWA yield, and trade prediction markets using only your accrued yield via Yellow Network.",
+    keywords: ["prediction market", "DeFi", "yield farming", "RWA", "Yellow Network", "zero opportunity cost", "principal protection"],
     openGraph: {
         title: "Basis Zero — Zero Opportunity Cost Prediction Market",
         description: "Trade the world, keep your yield. Principal protection meets speculation.",
@@ -41,7 +40,6 @@ export default function HomePage() {
             <HeroSection />
             <MetricsTicker />
             <HowItWorks />
-            <MarketPreview />
         </div>
     );
 }

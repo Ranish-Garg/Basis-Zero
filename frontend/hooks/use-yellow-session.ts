@@ -35,7 +35,7 @@ export interface StreamingBalance {
     available: string
 }
 
-const API_BASE = "http://localhost:3001/api/session"
+const BACKEND_URL = `${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001"}/api/session`
 
 export function useYellowSession() {
     const { address } = useAccount()
@@ -55,7 +55,7 @@ export function useYellowSession() {
     const fetchSession = useCallback(async () => {
         if (!sessionId) return
         try {
-            const res = await fetch(`${API_BASE}/${sessionId}`)
+            const res = await fetch(`${BACKEND_URL}/${sessionId}`)
             if (res.ok) {
                 const data = await res.json()
                 setSession(data.session)
@@ -72,7 +72,7 @@ export function useYellowSession() {
     const fetchBalance = useCallback(async () => {
         if (!sessionId || !session) return
         try {
-            const res = await fetch(`${API_BASE}/${sessionId}/balance?safeMode=${session.safeModeEnabled}`)
+            const res = await fetch(`${BACKEND_URL}/${sessionId}/balance?safeMode=${session.safeModeEnabled}`)
             if (res.ok) {
                 const data = await res.json()
                 setBalance(data)
@@ -98,7 +98,7 @@ export function useYellowSession() {
         if (!address) return
         setIsLoading(true)
         try {
-            const res = await fetch(`${API_BASE}/open`, {
+            const res = await fetch(`${BACKEND_URL}/open`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -132,7 +132,7 @@ export function useYellowSession() {
         if (!sessionId) return
         setIsLoading(true)
         try {
-            const res = await fetch(`${API_BASE}/close`, {
+            const res = await fetch(`${BACKEND_URL}/close`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ sessionId })
