@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
 export async function POST(request: NextRequest) {
     try {
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
         });
 
         const data = await response.json();
-        
+
         if (!response.ok) {
             return NextResponse.json(data, { status: response.status });
         }

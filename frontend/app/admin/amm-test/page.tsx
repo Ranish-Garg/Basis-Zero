@@ -431,7 +431,7 @@ export default function AMMTestPage() {
                         </CardHeader>
                         <CardContent>
                             <div className="text-2xl font-bold">
-                                ${markets.reduce((sum, m) => 
+                                ${markets.reduce((sum, m) =>
                                     sum + (parseFloat(m.yesReserves) + parseFloat(m.noReserves)) / 1e6, 0
                                 ).toFixed(0)}
                             </div>
@@ -535,13 +535,12 @@ export default function AMMTestPage() {
                             <CardContent>
                                 <div className="space-y-3">
                                     {sessions.map((session) => (
-                                        <Card 
-                                            key={session.session_id} 
-                                            className={`border-2 cursor-pointer transition-all ${
-                                                selectedSessionId === session.session_id 
-                                                    ? 'border-primary' 
+                                        <Card
+                                            key={session.session_id}
+                                            className={`border-2 cursor-pointer transition-all ${selectedSessionId === session.session_id
+                                                    ? 'border-primary'
                                                     : 'hover:border-primary/50'
-                                            }`}
+                                                }`}
                                             onClick={() => setSelectedSessionId(session.session_id)}
                                         >
                                             <CardHeader className="pb-3">
@@ -579,11 +578,11 @@ export default function AMMTestPage() {
                                                     </div>
                                                 </div>
                                                 {session.status === 'OPEN' && (
-                                                    <Button 
+                                                    <Button
                                                         onClick={(e) => {
                                                             e.stopPropagation()
                                                             handleEndSession(session.session_id)
-                                                        }} 
+                                                        }}
                                                         variant="destructive"
                                                         size="sm"
                                                         disabled={loading}
@@ -652,7 +651,7 @@ export default function AMMTestPage() {
                                     <form onSubmit={handlePlaceBet} className="space-y-4">
                                         <div>
                                             <Label>Market ID</Label>
-                                            <Select value={betForm.marketId} onValueChange={(v) => setBetForm({...betForm, marketId: v})}>
+                                            <Select value={betForm.marketId} onValueChange={(v) => setBetForm({ ...betForm, marketId: v })}>
                                                 <SelectTrigger>
                                                     <SelectValue placeholder="Select market" />
                                                 </SelectTrigger>
@@ -668,7 +667,7 @@ export default function AMMTestPage() {
 
                                         <div>
                                             <Label>Session ID</Label>
-                                            <Select value={betForm.sessionId} onValueChange={(v) => setBetForm({...betForm, sessionId: v})}>
+                                            <Select value={betForm.sessionId} onValueChange={(v) => setBetForm({ ...betForm, sessionId: v })}>
                                                 <SelectTrigger>
                                                     <SelectValue placeholder="Select session" />
                                                 </SelectTrigger>
@@ -687,7 +686,7 @@ export default function AMMTestPage() {
                                             <Input
                                                 type="text"
                                                 value={betForm.amount}
-                                                onChange={(e) => setBetForm({...betForm, amount: e.target.value})}
+                                                onChange={(e) => setBetForm({ ...betForm, amount: e.target.value })}
                                                 placeholder="100000000 = $100"
                                             />
                                             <p className="text-xs text-muted-foreground mt-1">
@@ -697,7 +696,7 @@ export default function AMMTestPage() {
 
                                         <div>
                                             <Label>Outcome</Label>
-                                            <Select value={betForm.outcome} onValueChange={(v) => setBetForm({...betForm, outcome: v})}>
+                                            <Select value={betForm.outcome} onValueChange={(v) => setBetForm({ ...betForm, outcome: v })}>
                                                 <SelectTrigger>
                                                     <SelectValue />
                                                 </SelectTrigger>
@@ -726,7 +725,7 @@ export default function AMMTestPage() {
                                     <form onSubmit={handleSellPosition} className="space-y-4">
                                         <div>
                                             <Label>Market ID</Label>
-                                            <Select value={sellForm.marketId} onValueChange={(v) => setSellForm({...sellForm, marketId: v})}>
+                                            <Select value={sellForm.marketId} onValueChange={(v) => setSellForm({ ...sellForm, marketId: v })}>
                                                 <SelectTrigger>
                                                     <SelectValue placeholder="Select market" />
                                                 </SelectTrigger>
@@ -742,7 +741,7 @@ export default function AMMTestPage() {
 
                                         <div>
                                             <Label>Session ID</Label>
-                                            <Select value={sellForm.sessionId} onValueChange={(v) => setSellForm({...sellForm, sessionId: v})}>
+                                            <Select value={sellForm.sessionId} onValueChange={(v) => setSellForm({ ...sellForm, sessionId: v })}>
                                                 <SelectTrigger>
                                                     <SelectValue placeholder="Select session" />
                                                 </SelectTrigger>
@@ -787,7 +786,7 @@ export default function AMMTestPage() {
 
                                         <div>
                                             <Label>Outcome</Label>
-                                            <Select value={sellForm.outcome} onValueChange={(v) => setSellForm({...sellForm, outcome: v})}>
+                                            <Select value={sellForm.outcome} onValueChange={(v) => setSellForm({ ...sellForm, outcome: v })}>
                                                 <SelectTrigger>
                                                     <SelectValue />
                                                 </SelectTrigger>
@@ -807,7 +806,7 @@ export default function AMMTestPage() {
                                             <Input
                                                 type="text"
                                                 value={sellForm.amount}
-                                                onChange={(e) => setSellForm({...sellForm, amount: e.target.value})}
+                                                onChange={(e) => setSellForm({ ...sellForm, amount: e.target.value })}
                                                 placeholder="50000000 = 50 shares"
                                             />
                                             <p className="text-xs text-muted-foreground mt-1">
@@ -840,7 +839,7 @@ export default function AMMTestPage() {
                                             <Label>Market ID (optional)</Label>
                                             <Input
                                                 value={newMarket.marketId}
-                                                onChange={(e) => setNewMarket({...newMarket, marketId: e.target.value})}
+                                                onChange={(e) => setNewMarket({ ...newMarket, marketId: e.target.value })}
                                                 placeholder="Auto-generated if empty"
                                             />
                                         </div>
@@ -849,7 +848,7 @@ export default function AMMTestPage() {
                                             <Label>Title</Label>
                                             <Input
                                                 value={newMarket.title}
-                                                onChange={(e) => setNewMarket({...newMarket, title: e.target.value})}
+                                                onChange={(e) => setNewMarket({ ...newMarket, title: e.target.value })}
                                                 placeholder="Will Bitcoin reach $100k?"
                                                 required
                                             />
@@ -859,7 +858,7 @@ export default function AMMTestPage() {
                                             <Label>Description</Label>
                                             <Textarea
                                                 value={newMarket.description}
-                                                onChange={(e) => setNewMarket({...newMarket, description: e.target.value})}
+                                                onChange={(e) => setNewMarket({ ...newMarket, description: e.target.value })}
                                                 placeholder="Market description..."
                                                 rows={3}
                                             />
@@ -867,7 +866,7 @@ export default function AMMTestPage() {
 
                                         <div>
                                             <Label>Category</Label>
-                                            <Select value={newMarket.category} onValueChange={(v) => setNewMarket({...newMarket, category: v})}>
+                                            <Select value={newMarket.category} onValueChange={(v) => setNewMarket({ ...newMarket, category: v })}>
                                                 <SelectTrigger>
                                                     <SelectValue />
                                                 </SelectTrigger>
@@ -886,7 +885,7 @@ export default function AMMTestPage() {
                                             <Input
                                                 type="datetime-local"
                                                 value={newMarket.expiresAt}
-                                                onChange={(e) => setNewMarket({...newMarket, expiresAt: e.target.value})}
+                                                onChange={(e) => setNewMarket({ ...newMarket, expiresAt: e.target.value })}
                                             />
                                             <p className="text-xs text-muted-foreground mt-1">
                                                 Defaults to 7 days from now
@@ -897,7 +896,7 @@ export default function AMMTestPage() {
                                             <Label>Initial Liquidity (micro-units)</Label>
                                             <Input
                                                 value={newMarket.initialLiquidity}
-                                                onChange={(e) => setNewMarket({...newMarket, initialLiquidity: e.target.value})}
+                                                onChange={(e) => setNewMarket({ ...newMarket, initialLiquidity: e.target.value })}
                                                 placeholder="1000000000 = $1000"
                                             />
                                             <p className="text-xs text-muted-foreground mt-1">
@@ -925,7 +924,7 @@ export default function AMMTestPage() {
                                             <Label>Session ID (optional)</Label>
                                             <Input
                                                 value={newSession.sessionId}
-                                                onChange={(e) => setNewSession({...newSession, sessionId: e.target.value})}
+                                                onChange={(e) => setNewSession({ ...newSession, sessionId: e.target.value })}
                                                 placeholder="Auto-generated if empty"
                                             />
                                         </div>
@@ -934,7 +933,7 @@ export default function AMMTestPage() {
                                             <Label>User Address (optional)</Label>
                                             <Input
                                                 value={newSession.userAddress}
-                                                onChange={(e) => setNewSession({...newSession, userAddress: e.target.value})}
+                                                onChange={(e) => setNewSession({ ...newSession, userAddress: e.target.value })}
                                                 placeholder="0x... (auto-generated if empty)"
                                             />
                                         </div>
@@ -943,7 +942,7 @@ export default function AMMTestPage() {
                                             <Label>Initial Collateral (micro-units)</Label>
                                             <Input
                                                 value={newSession.initialCollateral}
-                                                onChange={(e) => setNewSession({...newSession, initialCollateral: e.target.value})}
+                                                onChange={(e) => setNewSession({ ...newSession, initialCollateral: e.target.value })}
                                                 placeholder="5000000000 = $5000"
                                                 required
                                             />
