@@ -96,7 +96,7 @@ export function Footer() {
                 {/* Bottom Bar */}
                 <div className="mt-12 pt-8 border-t border-border/50 flex flex-col sm:flex-row items-center justify-between gap-4">
                     <p className="text-xs text-muted-foreground">
-                        © 2026 Basis Zero. Powered by Circle Arc & Yellow Network.
+                        © 2026 Basis Zero. Powered by RWA Yield & Yellow Network.
                     </p>
                     <div className="flex items-center gap-4">
                         <span className="flex items-center gap-2 text-xs text-muted-foreground">

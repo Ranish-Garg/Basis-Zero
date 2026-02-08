@@ -9,12 +9,12 @@ interface Metric {
 }
 
 const metrics: Metric[] = [
-    { label: "BUIDL APY", value: "5.12%", trend: "up" },
+    { label: "RWA APY", value: "5.20%", trend: "up" },
     { label: "TVL", value: "$2.4M", trend: "up" },
     { label: "Active Markets", value: "24", trend: "neutral" },
     { label: "24h Volume", value: "$890K", trend: "up" },
     { label: "Yield Distributed", value: "$156K", trend: "up" },
-    { label: "Circle Arc Deposits", value: "1,247", trend: "up" },
+    { label: "Vault Deposits", value: "1,247", trend: "up" },
 ]
 
 export function MetricsTicker() {
@@ -53,10 +53,10 @@ export function MetricsTicker() {
                             {metric.label}:
                         </span>
                         <span className={`font-mono text-sm font-semibold ${metric.trend === "up"
-                                ? "text-green-500"
-                                : metric.trend === "down"
-                                    ? "text-red-500"
-                                    : "text-primary"
+                            ? "text-green-500"
+                            : metric.trend === "down"
+                                ? "text-red-500"
+                                : "text-primary"
                             }`}>
                             {metric.value}
                         </span>
